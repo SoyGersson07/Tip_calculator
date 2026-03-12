@@ -109,13 +109,16 @@ Tip_calculator/
 ## Pantallas
 
 Pantalla 1 — Principal
+
 <img width="400" height="880" alt="image" src="https://github.com/user-attachments/assets/3a48a381-a007-4708-8724-48d5b087da9d" />
 
 
 Pantalla 2 — Calculadora
+
 <img width="416" height="886" alt="image" src="https://github.com/user-attachments/assets/5068f48e-ef54-41ae-9dcd-0ee1a322d5e4" />
 
 Pantalla 3 — Desgloce
+
 <img width="408" height="890" alt="image" src="https://github.com/user-attachments/assets/9d1fe275-01d5-463b-adfa-0a05df5e1874" />
 
 
