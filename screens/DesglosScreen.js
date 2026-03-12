@@ -1,13 +1,15 @@
+// Importamos los módulos necesarios de React Native para construir la interfaz de usuario
 import {
-  StyleSheet,
-  Text,
-  View,
-  TouchableOpacity,
-  SafeAreaView,
-  ScrollView,
-  Share,
+  StyleSheet, // Para crear estilos
+  Text, // Para mostrar texto
+  View, // Contenedor principal
+  TouchableOpacity, // Para botones interactivos
+  SafeAreaView, // Evita que el contenido se oculte por notches
+  ScrollView, // Para contenido desplazable
+  Share, // Para compartir el resultado de la cuenta
 } from "react-native";
 
+// Paleta de colores constantes para mantener consistencia visual en toda la pantalla
 const C = {
   primary: "#E2725B",
   primaryLight: "#FDF0ED",
@@ -22,76 +24,108 @@ const C = {
   invitadoText: "#8E8E93",
 };
 
+// Función auxiliar para formatear números como moneda
+// Convierte un número a string con $ y dos decimales (ej: 45.5 -> "$45.50")
 function fmt(val) {
   return `$${(parseFloat(val) || 0).toFixed(2)}`;
 }
 
+// ======== COMPONENTE PRINCIPAL DESGLOSSCREEN ========
+// Pantalla que muestra el desglose detallado de una cuenta con todos los participantes
+// Recibe la navegación y los parámetros con los datos de la cuenta desde CalculatorScreen
 export default function DesglosScreen({ route, navigation }) {
-  // Los datos llegan desde calculator.js via navigation.navigate("Desglose", { ... })
+  // Extraemos los datos que vienen desde la pantalla de calculadora
+  // Si no vienen datos, usamos valores por defecto (vacíos/0)
   const {
-    participantes = [],
-    tipPct = 10,
-    subtotal = 0,
-    propina = 0,
-    totalAPagar = 0,
+    participantes = [], // Lista de personas que son parte de la cuenta
+    tipPct = 10, // Porcentaje de propina (10% por defecto)
+    subtotal = 0, // Total de consumo sin propina
+    propina = 0, // Monto total de propina
+    totalAPagar = 0, // Monto final a pagar (subtotal + propina)
   } = route?.params || {};
 
+  // ======== LÓGICA DE CÁLCULOS ========
+  // Filtramos solo los participantes NO excluidos (que sí pagan)
   const activos = participantes.filter((p) => !p.excluido);
+  
+  // Calculamos el Total de consumo de los participantes EXCLUIDOS (invitados)
+  // Estos participantes no pagan pero sus consumos se reparten entre los activos
   const totalExcluidos = participantes
-    .filter((p) => p.excluido)
-    .reduce((s, p) => s + (parseFloat(p.consumo) || 0), 0);
+    .filter((p) => p.excluido) // Solo los excluidos
+    .reduce((s, p) => s + (parseFloat(p.consumo) || 0), 0); // Suma de consumos
 
-  // Propina que cubre el consumo de excluidos, repartida entre activos
+  // Propina que generan los excluidos, repartida entre los participantes activos
+  // Si hay participantes activos, dividimos la propina de excluidos entre ellos
   const propinaExcluidosPorActivo =
     activos.length > 0
       ? (totalExcluidos * (tipPct / 100)) / activos.length
       : 0;
+  
+  // Consumo de excluidos repartido entre los participantes activos
   const consumoExcluidosPorActivo =
     activos.length > 0 ? totalExcluidos / activos.length : 0;
 
+  // Función para calcular el TOTAL que debe pagar un participante
+  // Si es un excluido (invitado), paga 0 (sus gastos se cubren)
+  // Si es activo, paga: su consumo + su propina + su parte del consumo de excluidos + su parte de la propina de excluidientos
   function totalParticipante(p) {
-    if (p.excluido) return 0;
-    const consumo = parseFloat(p.consumo) || 0;
-    const propinaPropia = consumo * (tipPct / 100);
+    if (p.excluido) return 0; // Los invitados no pagan nada
+    const consumo = parseFloat(p.consumo) || 0; // Su consumo individual
+    const propinaPropia = consumo * (tipPct / 100); // Propina sobre su consumo
+    // Total = consumo + propina propia + su parte del consumo de excluidos + su parte de la propina de excluidos
     return consumo + propinaPropia + consumoExcluidosPorActivo + propinaExcluidosPorActivo;
   }
 
+  // Función para calcular sólo la PROPINA que paga un participante
+  // Incluye: propina sobre su consumo + su parte de la propina de los excluidos
   function propinaParticipante(p) {
     const consumo = parseFloat(p.consumo) || 0;
     return consumo * (tipPct / 100) + propinaExcluidosPorActivo;
   }
 
+  // Función para compartir el resultado de la cuenta
+  // Usa la API Share de React Native para enviar por WhatsApp, email, etc.
   async function handleCompartir() {
+    // Creamos un array de strings con cada participante y su total
     const lines = participantes.map((p) => {
-      if (p.excluido) return `${p.nombre} (Invitado): $0.00`;
-      return `${p.nombre}: ${fmt(totalParticipante(p))}`;
+      if (p.excluido) return `${p.nombre} (Invitado): $0.00`; // Invitados muestran $0
+      return `${p.nombre}: ${fmt(totalParticipante(p))}`; // Activos muestran su total
     });
+    
+    // Armamos el mensaje con un formato legible y atractivo
     const texto =
-      `🧾 Desglose de cuenta - PropinaPlus\n\n` +
-      lines.join("\n") +
-      `\n\nSubtotal: ${fmt(subtotal)}\nPropina (${tipPct}%): ${fmt(propina)}\nTOTAL: ${fmt(totalAPagar)}`;
+      `🧾 Desglose de cuenta - PropinaPlus\n\n` + // Encabezado
+      lines.join("\n") + // Lista de participantes
+      `\n\nSubtotal: ${fmt(subtotal)}\nPropina (${tipPct}%): ${fmt(propina)}\nTOTAL: ${fmt(totalAPagar)}`; // Resumen final
+    
+    // Abrimos el diálogo de compartir del dispositivo
     await Share.share({ message: texto });
   }
 
   return (
     <SafeAreaView style={styles.safe}>
-      {/* Header */}
+      {/* ======== HEADER ======== */}
       <View style={styles.header}>
+        {/* Botón para volver atrás */}
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Text style={styles.backIcon}>←</Text>
         </TouchableOpacity>
+        {/* Título de la pantalla */}
         <Text style={styles.headerTitle}>Desglose</Text>
+        {/* Espacio vacío para centrar el título */}
         <View style={{ width: 36 }} />
       </View>
 
+      {/* ======== CONTENIDO PRINCIPAL (SCROLLABLE) ======== */}
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={false} // Oculta barra de scroll
       >
-        {/* Sección participantes */}
+        {/* TÍTULO: PARTICIPANTES */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionLabel}>PARTICIPANTES</Text>
+          {/* Badge que muestra cuántas personas están en la cuenta */}
           <View style={styles.personasBadge}>
             <Text style={styles.personasBadgeText}>
               {participantes.length} Persona{participantes.length !== 1 ? "s" : ""}
@@ -99,25 +133,33 @@ export default function DesglosScreen({ route, navigation }) {
           </View>
         </View>
 
-        {/* Cards de cada participante */}
+        {/* LISTADO DE PARTICIPANTES - Mostramos cada persona con su desglose */}
         {participantes.map((p) => {
+          // Determinamos si es un invitado (excluido)
           const esInvitado = p.excluido;
           return (
             <View
               key={p.id}
-              style={[styles.personaCard, esInvitado && styles.personaCardInvitado]}
+              style={[
+                styles.personaCard,
+                // Si es invitado, usamos estilos diferentes (fondo gris, borde punteado)
+                esInvitado && styles.personaCardInvitado
+              ]}
             >
+              {/* PARTE SUPERIOR: Nombre + Total a pagar */}
               <View style={styles.personaTop}>
-                {/* Nombre */}
+                {/* Nombre de la persona */}
                 <View style={styles.personaNombreRow}>
                   <Text
                     style={[
                       styles.personaNombre,
+                      // Si es invitado, su nombre se muestra en gris
                       esInvitado && styles.personaNombreInvitado,
                     ]}
                   >
                     {p.nombre}
                   </Text>
+                  {/* Badge "INVITADO" solo para excluidos */}
                   {esInvitado && (
                     <View style={styles.invitadoBadge}>
                       <Text style={styles.invitadoBadgeText}>INVITADO</Text>
@@ -125,10 +167,11 @@ export default function DesglosScreen({ route, navigation }) {
                   )}
                 </View>
 
-                {/* Total */}
+                {/* TOTAL QUE PAGA ESTA PERSONA */}
                 <Text
                   style={[
                     styles.personaTotal,
+                    // Si es invitado, el total se muestra en gris
                     esInvitado && styles.personaTotalInvitado,
                   ]}
                 >
@@ -136,10 +179,12 @@ export default function DesglosScreen({ route, navigation }) {
                 </Text>
               </View>
 
-              {/* Detalle */}
+              {/* PARTE INFERIOR: Detalle del desglose (consumo + propina) */}
               {esInvitado ? (
+                // Para invitados: mostrar mensaje explicativo
                 <Text style={styles.invitadoSub}>Consumo cubierto por el grupo</Text>
               ) : (
+                // Para participantes activos: mostrar consumo y propina
                 <View style={styles.personaDetalle}>
                   <Text style={styles.personaConsumo}>
                     Consumo: {fmt(parseFloat(p.consumo) || 0)}
@@ -153,19 +198,24 @@ export default function DesglosScreen({ route, navigation }) {
           );
         })}
 
-        {/* Total final */}
+        {/* TARJETA FINAL: Resumen de la cuenta completa */}
         <View style={styles.totalCard}>
-          {/* Marca de agua decorativa */}
+          {/* Marca de agua decorativa de fondo */}
           <Text style={styles.totalCardWatermark}>$</Text>
 
+          {/* Título */}
           <Text style={styles.totalCardLabel}>TOTAL FINAL DE LA CUENTA</Text>
+          
+          {/* Monto total con descripción */}
           <View style={styles.totalCardAmountRow}>
             <Text style={styles.totalCardAmount}>{fmt(totalAPagar)}</Text>
             <Text style={styles.totalCardSub}> (Incluye propina total)</Text>
           </View>
 
+          {/* Línea divisoria */}
           <View style={styles.totalCardDivider} />
 
+          {/* PIE: Desglose del cálculo (subtotal + propina individual) */}
           <View style={styles.totalCardFooter}>
             <Text style={styles.totalCardFooterText}>
               Subtotal: {fmt(subtotal)}
@@ -176,15 +226,17 @@ export default function DesglosScreen({ route, navigation }) {
           </View>
         </View>
 
+        {/* Espacio en blanco para que el contenido no quede debajo del botón */}
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* Botón compartir */}
+      {/* ======== BOTÓN FLOTANTE INFERIOR ======== */}
       <View style={styles.bottomBar}>
+        {/* Botón para compartir el resultado de la cuenta */}
         <TouchableOpacity
           style={styles.btnCompartir}
-          onPress={handleCompartir}
-          activeOpacity={0.88}
+          onPress={handleCompartir} // Activa la función de compartir
+          activeOpacity={0.88} // Efecto visual al presionar
         >
           <Text style={styles.btnCompartirIcon}>⇪</Text>
           <Text style={styles.btnCompartirText}>Compartir Resultado</Text>

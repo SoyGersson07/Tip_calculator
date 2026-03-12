@@ -1,16 +1,19 @@
+// Importamos los componentes necesarios de React Native para construir la interfaz
 import {
-  StyleSheet,
-  Text,
-  View,
-  TouchableOpacity,
-  SafeAreaView,
-  ScrollView,
-  Image
+  StyleSheet, // Para crear estilos
+  Text, // Para mostrar texto
+  View, // Contenedor principal
+  TouchableOpacity, // Para botones interactivos
+  SafeAreaView, // Contenedor que evita que el contenido quede oculto por notches
+  ScrollView, // Para contenido que se puede desplazar
+  Image // Para mostrar imágenes
 } from "react-native";
 
+// Importamos los íconos de la pantalla de inicio
 import commerce from "../assets/commerce.png";
 import charity from "../assets/charity.png";
 
+// Paleta de colores constantes para mantener consistencia en la app
 const C = {
   primary: "#d25238",
   bgMain: "#F6F4F0",
@@ -22,25 +25,28 @@ const C = {
   green: "#34C759",
 };
 
-// Aquí irán las cuentas guardadas cuando se implementen
-const HISTORIAL = [];
-const totalMes = 0;
-const totalPropinas = 0;
+// TODO: Datos pendientes de implementar - se conectarán con la base de datos
+const HISTORIAL = []; // Aquí irán las cuentas guardadas del usuario
+const totalMes = 0; // Total gastado en el mes
+const totalPropinas = 0; // Total en propinas del mes
 
+// Componente principal de la pantalla HOME
+// Recibe "navigation" para navegar entre pantallas
 export default function HomeScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Header */}
+      {/* HEADER: Título de la app */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>PropinaPlus</Text>
       </View>
 
+      {/* CONTENIDO PRINCIPAL: ScrollView permite desplazar verticalmente */}
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={false} // Oculta la barra de scroll
       >
-        {/* Saludo */}
+        {/* SECCIÓN 1: Saludo de bienvenida */}
         <View style={styles.greetSection}>
           <Text style={styles.greetTitle}>¡Hola, Usuario! 👋</Text>
           <Text style={styles.greetSub}>
@@ -48,23 +54,25 @@ export default function HomeScreen({ navigation }) {
           </Text>
         </View>
 
-        {/* Botón Nueva Cuenta */}
+        {/* SECCIÓN 2: Botón para iniciar nueva calculadora de propinas */}
         <TouchableOpacity
           style={styles.btnNuevaCuenta}
-          onPress={() => navigation && navigation.navigate("Calculator")}
-          activeOpacity={0.88}
+          onPress={() => navigation && navigation.navigate("Calculator")} // Navega a la pantalla de calculadora
+          activeOpacity={0.88} // Efecto visual al presionar
         >
           <Text style={styles.btnNuevaCuentaIcon}>⊕</Text>
           <Text style={styles.btnNuevaCuentaText}>Nueva Cuenta</Text>
         </TouchableOpacity>
 
-        {/* Stats */}
+        {/* SECCIÓN 3: Estadísticas (Total del mes + Propinas totales) */}
         <View style={styles.statsRow}>
+          {/* Card: Total gastado en el mes */}
           <View style={styles.statCard}>
             <Image source={commerce} style={{ width: 24, height: 24, marginBottom: 6 }} />
             <Text style={styles.statLabel}>Total Mes</Text>
             <Text style={styles.statValue}>${totalMes.toFixed(2)}</Text>
           </View>
+          {/* Card: Total en propinas */}
           <View style={styles.statCard}>
             <Image source={charity} style={{ width: 24, height: 24, marginBottom: 6 }} />
             <Text style={styles.statLabel}>Propinas</Text>
@@ -72,9 +80,10 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
 
-        {/* Historial Reciente */}
+        {/* SECCIÓN 4: Historial de cuentas recientes */}
         <Text style={styles.sectionTitle}>Historial Reciente</Text>
 
+        {/* Si no hay cuentas guardadas, mostrar un estado vacío */}
         {HISTORIAL.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyIcon}>🧾</Text>
@@ -84,11 +93,14 @@ export default function HomeScreen({ navigation }) {
             </Text>
           </View>
         ) : (
+          // Si hay cuentas, mostrarlas en una lista
           HISTORIAL.map((item) => (
             <View key={item.id} style={styles.historialCard}>
+              {/* Ícono de la cuenta (emoji) */}
               <View style={styles.historialIconWrap}>
                 <Text style={styles.historialIcon}>{item.icon}</Text>
               </View>
+              {/* Información: nombre del restaurante, fecha y personas */}
               <View style={styles.historialInfo}>
                 <Text style={styles.historialNombre}>{item.nombre}</Text>
                 <Text style={styles.historialFecha}>
@@ -96,6 +108,7 @@ export default function HomeScreen({ navigation }) {
                   {item.personas ? ` • ${item.personas} personas` : " • Solo"}
                 </Text>
               </View>
+              {/* Totales: monto pagado y propina */}
               <View style={styles.historialAmounts}>
                 <Text style={styles.historialTotal}>
                   ${item.total.toFixed(2)}

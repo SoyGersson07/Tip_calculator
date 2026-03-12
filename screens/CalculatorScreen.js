@@ -1,3 +1,4 @@
+// Importamos React y los componentes necesarios de React Native, además de las imágenes que se usarán en la interfaz.
 import { useState } from "react";
 import {
   StyleSheet,
@@ -14,11 +15,13 @@ import {
   Image
 } from "react-native";
 
+// se importan las imagenes
 import web from "../assets/web.png";
 import profile from "../assets/profile.png";
 import people from "../assets/people.png";
 import calculator from "../assets/calculator.png";
 
+// se declaran constates de colores y porcentaje de propina para mantener consistencia y facilitar cambios futuros
 const C = {
   primary: "#E2725B",
   primaryLight: "#FDF0ED",
@@ -34,22 +37,36 @@ const C = {
 
 const TIP_PCT = 10; // fijo 10% por ahora
 
+// Se exporta el componente principal de la pantalla de calculadora que recibe la navegación como prop
 export default function Calculator({ navigation }) {
+  // ======== STATES (Estados) ========
+  // Lista de participantes que se va a mostrar en la pantalla
+  // Cada participante tiene: id (único), nombre, consumo, y si está excluido o no
   const [participantes, setParticipantes] = useState([
-    { id: 1, nombre: "Tú", consumo: "", excluido: false },
+    { id: 1, nombre: "Tú", consumo: "", excluido: false }, // El primer participante siempre eres tú
   ]);
+  // Controla si el modal de "Añadir participante" está visible o no
   const [modalVisible, setModalVisible] = useState(false);
+  // Nombre del nuevo participante que se está escribiendo en el modal
   const [newNombre, setNewNombre] = useState("");
+  // Consumo del nuevo participante que se está escribiendo en el modal
   const [newConsumo, setNewConsumo] = useState("");
 
   // ── Cálculos ──────────────────────────────────────────────────────────────
-  const activos = participantes.filter((p) => !p.excluido);
+
+  // Se declara variable para participantes activos en el pago, para calcular su consumo total y propina a repartir entre ellos
+  const activos = participantes.filter((p) => !p.excluido); 
+
+  // Se declara variable para participantes excluidos del pago, por si queremos mostrar su consumo total o propina aparte (opcional)
   const excluidos = participantes.filter((p) => p.excluido);
 
+
+  // El subtotal se calcula solo sobre participantes activos, ya que los excluidos no aportan al total a pagar ni a la propina.
   const subtotal = activos.reduce(
     (sum, p) => sum + (parseFloat(p.consumo) || 0),
     0
   );
+  // El total de consumo de excluidos se calcula aparte por si queremos mostrarlo o usarlo para cálculos adicionales, pero no se suma al subtotal ni a la base de propina, ya que su consumo no aporta al total a pagar ni a la propina.
   const totalExcluidos = excluidos.reduce(
     (sum, p) => sum + (parseFloat(p.consumo) || 0),
     0
@@ -63,24 +80,28 @@ export default function Calculator({ navigation }) {
   // Propina a repartir entre activos = propina sobre excluidos + propina propia
   // Simplificado: total a pagar / activos.length
   const propinaPorPersona =
-    activos.length > 0 ? totalAPagar / activos.length : 0;
+    activos.length > 0 ? totalAPagar / activos.length : 0; 
 
   const pctDelConsumo =
     subtotal > 0 ? ((propinaPorPersona / subtotal) * 100).toFixed(1) : 0;
 
   // ── Acciones ──────────────────────────────────────────────────────────────
+
+  // Función para alternar si un participante está excluido o no del pago, lo que afecta su inclusión en el cálculo de subtotal, propina y total a pagar.
   function toggleExcluido(id) {
     setParticipantes((prev) =>
       prev.map((p) => (p.id === id ? { ...p, excluido: !p.excluido } : p))
     );
   }
 
+  // Función para actualizar el consumo de un participante específico, lo que afecta el cálculo del subtotal, propina y total a pagar.
   function actualizarConsumo(id, val) {
     setParticipantes((prev) =>
       prev.map((p) => (p.id === id ? { ...p, consumo: val } : p))
     );
   }
-
+  
+  // Función para agregar un nuevo participante a la lista, con su nombre y consumo inicial. El nuevo participante se agrega al final de la lista y se cierra el modal de entrada.
   function agregarParticipante() {
     if (!newNombre.trim()) return;
     setParticipantes((prev) => [
@@ -97,34 +118,43 @@ export default function Calculator({ navigation }) {
     setModalVisible(false);
   }
 
+  // Función para formatear valores numéricos como moneda, asegurando que se muestren con dos decimales y el símbolo de dólar, lo que mejora la legibilidad de los totales y propinas en la interfaz.
   function fmt(val) {
     return `$${(parseFloat(val) || 0).toFixed(2)}`;
   }
 
   // ── UI ────────────────────────────────────────────────────────────────────
+  // Esta es la interfaz visual de la aplicación
   return (
     <SafeAreaView style={styles.safe}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        {/* Header */}
+        {/* ======== HEADER ======== */}
+        {/* Barra superior con botón de volver y título */}
         <View style={styles.header}>
+          {/* Botón para volver a la pantalla anterior */}
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
             <Text style={styles.backIcon}>←</Text>
           </TouchableOpacity>
+          {/* Título de la pantalla */}
           <Text style={styles.headerTitle}>Calculadora de Propina</Text>
+          {/* Espacio vacío para centrar el título */}
           <View style={{ width: 36 }} />
         </View>
 
+        {/* ======== CONTENIDO PRINCIPAL (SCROLLABLE) ======== */}
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* ── Sección PARTICIPANTES ── */}
+          {/* ── SECCIÓN 1: PARTICIPANTES ── */}
+          {/* Muestra la lista de todas las personas en la cuenta y un botón para añadir más */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionLabel}>PARTICIPANTES</Text>
+            {/* Botón para abrir el modal de agregar nuevo participante */}
             <TouchableOpacity
               style={styles.btnAnadir}
               onPress={() => setModalVisible(true)}
@@ -134,43 +164,53 @@ export default function Calculator({ navigation }) {
             </TouchableOpacity>
           </View>
 
+          {/* CARD: Contenedor blanco que agrupa todos los participantes */}
           <View style={styles.card}>
+            {/* Iteramos sobre cada participante para mostrar su información */}
             {participantes.map((p, index) => (
               <View
                 key={p.id}
                 style={[
                   styles.participanteRow,
+                  // Agregar borde inferior a todos excepto al último
                   index < participantes.length - 1 && styles.participanteRowBorder,
                 ]}
               >
-                {/* Top: icono + nombre + consumo */}
+                {/* FILA SUPERIOR: Avatar + Nombre + Input de consumo */}
                 <View style={styles.participanteTop}>
+                  {/* Lado izquierdo: Avatar y nombre */}
                   <View style={styles.participanteLeft}>
+                    {/* Avatar circular con ícono */}
                     <View style={styles.avatarCircle}>
                       <Image source={profile} style={{ width: 24, height: 24 }} />
                     </View>
+                    {/* Nombre del participante */}
                     <Text style={styles.participanteNombre}>{p.nombre}</Text>
                   </View>
+                  {/* Lado derecho: Input del consumo ($) */}
                   <View style={styles.participanteRight}>
                     <Text style={styles.consumoPrefix}>$</Text>
+                    {/* Input para que el usuario escriba cuánto gastó */}
                     <TextInput
                       style={styles.consumoInput}
                       value={p.consumo}
-                      onChangeText={(v) => actualizarConsumo(p.id, v)}
+                      onChangeText={(v) => actualizarConsumo(p.id, v)} // Actualiza cuando cambia el valor
                       placeholder="0.00"
                       placeholderTextColor={C.gray500}
-                      keyboardType="numeric"
+                      keyboardType="numeric" // Solo permite números
                     />
                   </View>
                 </View>
 
-                {/* Bottom: excluir del pago + switch */}
+                {/* FILA INFERIOR: Opción "Excluir del pago" con switch */}
                 <View style={styles.excluirRow}>
+                  {/* Etiqueta del switch */}
                   <Text style={styles.excluirLabel}>Excluir del pago</Text>
+                  {/* Switch para activar/desactivar la exclusión del pago */}
                   <Switch
                     value={p.excluido}
-                    onValueChange={() => toggleExcluido(p.id)}
-                    trackColor={{ false: C.gray200, true: C.primary }}
+                    onValueChange={() => toggleExcluido(p.id)} // Cambia el estado cuando se toca
+                    trackColor={{ false: C.gray200, true: C.primary }} // Colores del switch
                     thumbColor={C.white}
                   />
                 </View>
@@ -178,41 +218,48 @@ export default function Calculator({ navigation }) {
             ))}
           </View>
 
-          {/* ── Resumen de totales ── */}
+          {/* ── SECCIÓN 2: RESUMEN DE TOTALES ── */}
+          {/* Muestra el subtotal, propina y total a pagar */}
           <View style={styles.summaryBox}>
+            {/* Fila 1: Subtotal */}
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabelText}>Subtotal Consumo</Text>
               <Text style={styles.summaryValueText}>{fmt(subtotal)}</Text>
             </View>
+            {/* Fila 2: Propina (con borde superior e inferior) */}
             <View style={[styles.summaryRow, styles.summaryRowBorder]}>
               <Text style={styles.summaryPropLabel}>
                 Propina ({TIP_PCT}%)
               </Text>
               <Text style={styles.summaryPropValue}>+{fmt(propina)}</Text>
             </View>
+            {/* Fila 3: TOTAL A PAGAR (la más importante) */}
             <View style={styles.summaryRow}>
               <Text style={styles.summaryTotalLabel}>TOTAL A PAGAR</Text>
               <Text style={styles.summaryTotalValue}>{fmt(totalAPagar)}</Text>
             </View>
           </View>
 
-          {/* ── Configurar Propina ── */}
+          {/* ── SECCIÓN 3: CONFIGURAR PROPINA ── */}
+          {/* Muestra información sobre cómo se distribuye la propina */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionLabel}>CONFIGURAR PROPINA</Text>
           </View>
 
           <View style={styles.card}>
-            {/* Total propina a repartir */}
+            {/* Bloque central: Total propina a repartir */}
             <View style={styles.propinaCenterBlock}>
               <Text style={styles.propinaCenterLabel}>
                 TOTAL PROPINA A REPARTIR ($)
               </Text>
+              {/* Monto total de la propina en grande */}
               <Text style={styles.propinaCenterValue}>{fmt(propina)}</Text>
             </View>
 
+            {/* Línea divisoria */}
             <View style={styles.divider} />
 
-            {/* Propina por persona */}
+            {/* Propina que le toca a cada persona */}
             <View style={styles.propinaPorPersonaRow}>
               <Text style={styles.propinaPorPersonaLabel}>
                 PROPINA POR PERSONA:
@@ -222,7 +269,7 @@ export default function Calculator({ navigation }) {
               </Text>
             </View>
 
-            {/* Info pills */}
+            {/* Info Pill 1: Porcentaje del consumo */}
             <View style={styles.infoPill}>
               <Text style={styles.infoPillIcon}>%</Text>
               <Text style={styles.infoPillText}>
@@ -234,6 +281,7 @@ export default function Calculator({ navigation }) {
               </Text>
             </View>
 
+            {/* Info Pill 2: Número de participantes */}
             <View style={[styles.infoPill, { marginTop: 8 }]}>
               <Image source={people} style={{ width: 16, height: 16, marginTop: 2 }} />
               <Text style={styles.infoPillText}>
@@ -247,14 +295,17 @@ export default function Calculator({ navigation }) {
             </View>
           </View>
 
+          {/* Espacio en blanco para que el contenido no quede debajo del botón flotante */}
           <View style={{ height: 100 }} />
         </ScrollView>
 
-        {/* Botón flotante */}
+        {/* ======== BOTÓN FLOTANTE INFERIOR ======== */}
+        {/* Botón para calcular y ver el desglose final de la cuenta */}
         <View style={styles.bottomBar}>
           <TouchableOpacity
             style={styles.btnCalcular}
             activeOpacity={0.88}
+            // Al tocar, navega a la pantalla de desglose con todos los datos
             onPress={() => {
               navigation.navigate("Desglos", {
                 participantes,
@@ -271,7 +322,8 @@ export default function Calculator({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* ── Modal Añadir Participante ── */}
+        {/* ======== MODAL: AÑADIR NUEVO PARTICIPANTE ======== */}
+        {/* Diálogo que aparece cuando el usuario presiona el botón "Añadir" */}
         <Modal
           visible={modalVisible}
           transparent
@@ -281,11 +333,15 @@ export default function Calculator({ navigation }) {
           <View style={styles.modalOverlay}>
             <View style={styles.modalSheet}>
               <View style={styles.modalHandle} />
+              {/* Título del modal */}
               <Text style={styles.modalTitle}>Añadir Participante</Text>
 
+              {/* CAMPO 1: Nombre del participante */}
               <Text style={styles.modalLabel}>Nombre del participante</Text>
               <View style={styles.modalInputWrapper}>
+                {/* Ícono del participante */}
                 <Image source={profile} style={{ width: 24, height: 24 }} />
+                {/* Input para escribir el nombre */}
                 <TextInput
                   style={styles.modalInput}
                   value={newNombre}
@@ -295,11 +351,14 @@ export default function Calculator({ navigation }) {
                 />
               </View>
 
+              {/* CAMPO 2: Consumo individual */}
               <Text style={[styles.modalLabel, { marginTop: 20 }]}>
                 Consumo individual ($)
               </Text>
               <View style={styles.modalInputWrapper}>
+                {/* Símbolo de dólar */}
                 <Text style={styles.modalInputPrefix}>$</Text>
+                {/* Input para escribir el consumo */}
                 <TextInput
                   style={styles.modalInput}
                   value={newConsumo}
@@ -309,20 +368,23 @@ export default function Calculator({ navigation }) {
                   keyboardType="numeric"
                 />
               </View>
+              {/* Pista sobre cómo funciona si dejas el consumo vacío */}
               <Text style={styles.modalHint}>
                 Si dejas este campo vacío, el total se dividirá equitativamente.
               </Text>
 
+              {/* BOTÓN 1: Confirmar y añadir */}
               <TouchableOpacity
                 style={styles.btnConfirm}
-                onPress={agregarParticipante}
+                onPress={agregarParticipante} // Ejecuta la función de agregar
                 activeOpacity={0.88}
               >
                 <Text style={styles.btnConfirmText}>+ Añadir</Text>
               </TouchableOpacity>
 
+              {/* BOTÓN 2: Cancelar */}
               <TouchableOpacity
-                onPress={() => setModalVisible(false)}
+                onPress={() => setModalVisible(false)} // Cierra el modal
                 style={styles.btnCancelar}
                 activeOpacity={0.7}
               >
