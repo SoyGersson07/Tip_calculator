@@ -1,5 +1,5 @@
 // Importamos React y los componentes necesarios de React Native, además de las imágenes que se usarán en la interfaz.
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -12,7 +12,7 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
-  Image
+  Image,
 } from "react-native";
 
 // se importan las imagenes
@@ -20,6 +20,7 @@ import web from "../assets/web.png";
 import profile from "../assets/profile.png";
 import people from "../assets/people.png";
 import calculator from "../assets/calculator.png";
+import { guardarCuenta } from "../historialStorage";
 
 // se declaran constates de colores y porcentaje de propina para mantener consistencia y facilitar cambios futuros
 const C = {
@@ -38,7 +39,7 @@ const C = {
 const TIP_PCT = 10; // fijo 10% por ahora
 
 // Se exporta el componente principal de la pantalla de calculadora que recibe la navegación como prop
-export default function Calculator({ navigation }) {
+export default function Calculator({ navigation, route }) {
   // ======== STATES (Estados) ========
   // Lista de participantes que se va a mostrar en la pantalla
   // Cada participante tiene: id (único), nombre, consumo, y si está excluido o no
@@ -51,36 +52,44 @@ export default function Calculator({ navigation }) {
   const [newNombre, setNewNombre] = useState("");
   // Consumo del nuevo participante que se está escribiendo en el modal
   const [newConsumo, setNewConsumo] = useState("");
+  // Monto total de la propina calculada, se puede usar para mostrar o para pasar a la siguiente pantalla
+  const [propinaMonto, setPropinaMonto] = useState(null);
+
+  useEffect(() => {
+    if (route?.params?.propinaMonto !== undefined) {
+      setPropinaMonto(route.params.propinaMonto);
+    }
+  }, [route?.params?.propinaMonto]);
 
   // ── Cálculos ──────────────────────────────────────────────────────────────
 
   // Se declara variable para participantes activos en el pago, para calcular su consumo total y propina a repartir entre ellos
-  const activos = participantes.filter((p) => !p.excluido); 
+  const activos = participantes.filter((p) => !p.excluido);
 
   // Se declara variable para participantes excluidos del pago, por si queremos mostrar su consumo total o propina aparte (opcional)
   const excluidos = participantes.filter((p) => p.excluido);
 
-
   // El subtotal se calcula solo sobre participantes activos, ya que los excluidos no aportan al total a pagar ni a la propina.
   const subtotal = activos.reduce(
     (sum, p) => sum + (parseFloat(p.consumo) || 0),
-    0
+    0,
   );
   // El total de consumo de excluidos se calcula aparte por si queremos mostrarlo o usarlo para cálculos adicionales, pero no se suma al subtotal ni a la base de propina, ya que su consumo no aporta al total a pagar ni a la propina.
   const totalExcluidos = excluidos.reduce(
     (sum, p) => sum + (parseFloat(p.consumo) || 0),
-    0
+    0,
   );
 
   // La propina se calcula sobre TODO (activos + excluidos)
   const totalConsumo = subtotal + totalExcluidos;
-  const propina = totalConsumo * (TIP_PCT / 100);
+  const propina =
+    propinaMonto !== null ? propinaMonto : totalConsumo * (TIP_PCT / 100);
   const totalAPagar = totalConsumo + propina;
 
   // Propina a repartir entre activos = propina sobre excluidos + propina propia
   // Simplificado: total a pagar / activos.length
   const propinaPorPersona =
-    activos.length > 0 ? totalAPagar / activos.length : 0; 
+    activos.length > 0 ? totalAPagar / activos.length : 0;
 
   const pctDelConsumo =
     subtotal > 0 ? ((propinaPorPersona / subtotal) * 100).toFixed(1) : 0;
@@ -90,17 +99,17 @@ export default function Calculator({ navigation }) {
   // Función para alternar si un participante está excluido o no del pago, lo que afecta su inclusión en el cálculo de subtotal, propina y total a pagar.
   function toggleExcluido(id) {
     setParticipantes((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, excluido: !p.excluido } : p))
+      prev.map((p) => (p.id === id ? { ...p, excluido: !p.excluido } : p)),
     );
   }
 
   // Función para actualizar el consumo de un participante específico, lo que afecta el cálculo del subtotal, propina y total a pagar.
   function actualizarConsumo(id, val) {
     setParticipantes((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, consumo: val } : p))
+      prev.map((p) => (p.id === id ? { ...p, consumo: val } : p)),
     );
   }
-  
+
   // Función para agregar un nuevo participante a la lista, con su nombre y consumo inicial. El nuevo participante se agrega al final de la lista y se cierra el modal de entrada.
   function agregarParticipante() {
     if (!newNombre.trim()) return;
@@ -135,7 +144,10 @@ export default function Calculator({ navigation }) {
         {/* Barra superior con botón de volver y título */}
         <View style={styles.header}>
           {/* Botón para volver a la pantalla anterior */}
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.backBtn}
+          >
             <Text style={styles.backIcon}>←</Text>
           </TouchableOpacity>
           {/* Título de la pantalla */}
@@ -160,7 +172,10 @@ export default function Calculator({ navigation }) {
               onPress={() => setModalVisible(true)}
               activeOpacity={0.8}
             >
-              <Text style={styles.btnAnadirText}> <Image source={web} style={{ width: 24, height: 24 }} /> Añadir</Text>
+              <Text style={styles.btnAnadirText}>
+                {" "}
+                <Image source={web} style={{ width: 24, height: 24 }} /> Añadir
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -173,7 +188,8 @@ export default function Calculator({ navigation }) {
                 style={[
                   styles.participanteRow,
                   // Agregar borde inferior a todos excepto al último
-                  index < participantes.length - 1 && styles.participanteRowBorder,
+                  index < participantes.length - 1 &&
+                    styles.participanteRowBorder,
                 ]}
               >
                 {/* FILA SUPERIOR: Avatar + Nombre + Input de consumo */}
@@ -182,7 +198,10 @@ export default function Calculator({ navigation }) {
                   <View style={styles.participanteLeft}>
                     {/* Avatar circular con ícono */}
                     <View style={styles.avatarCircle}>
-                      <Image source={profile} style={{ width: 24, height: 24 }} />
+                      <Image
+                        source={profile}
+                        style={{ width: 24, height: 24 }}
+                      />
                     </View>
                     {/* Nombre del participante */}
                     <Text style={styles.participanteNombre}>{p.nombre}</Text>
@@ -228,9 +247,7 @@ export default function Calculator({ navigation }) {
             </View>
             {/* Fila 2: Propina (con borde superior e inferior) */}
             <View style={[styles.summaryRow, styles.summaryRowBorder]}>
-              <Text style={styles.summaryPropLabel}>
-                Propina ({TIP_PCT}%)
-              </Text>
+              <Text style={styles.summaryPropLabel}>Propina ({TIP_PCT}%)</Text>
               <Text style={styles.summaryPropValue}>+{fmt(propina)}</Text>
             </View>
             {/* Fila 3: TOTAL A PAGAR (la más importante) */}
@@ -242,9 +259,18 @@ export default function Calculator({ navigation }) {
 
           {/* ── SECCIÓN 3: CONFIGURAR PROPINA ── */}
           {/* Muestra información sobre cómo se distribuye la propina */}
-          <View style={styles.sectionHeader}>
+          <TouchableOpacity
+            style={styles.sectionHeader}
+            activeOpacity={0.7}
+            onPress={() =>
+              navigation.navigate("Tip", { subtotal: totalConsumo })
+            }
+          >
             <Text style={styles.sectionLabel}>CONFIGURAR PROPINA</Text>
-          </View>
+            <Text style={{ color: C.primary, fontSize: 13, fontWeight: "700" }}>
+              Editar ›
+            </Text>
+          </TouchableOpacity>
 
           <View style={styles.card}>
             {/* Bloque central: Total propina a repartir */}
@@ -283,7 +309,10 @@ export default function Calculator({ navigation }) {
 
             {/* Info Pill 2: Número de participantes */}
             <View style={[styles.infoPill, { marginTop: 8 }]}>
-              <Image source={people} style={{ width: 16, height: 16, marginTop: 2 }} />
+              <Image
+                source={people}
+                style={{ width: 16, height: 16, marginTop: 2 }}
+              />
               <Text style={styles.infoPillText}>
                 Dividido entre{" "}
                 <Text style={{ color: C.primary, fontWeight: "700" }}>
@@ -306,7 +335,18 @@ export default function Calculator({ navigation }) {
             style={styles.btnCalcular}
             activeOpacity={0.88}
             // Al tocar, navega a la pantalla de desglose con todos los datos
-            onPress={() => {
+            onPress={async () => {
+              const cuenta = {
+                id: Date.now(),
+                nombre: "Cuenta", // se puede personalizar después
+                fecha: new Date().toISOString(),
+                personas: activos.length,
+                total: totalAPagar,
+                propina,
+                pct:
+                  propinaMonto !== null ? parseFloat(pctDelConsumo) : TIP_PCT,
+              };
+              await guardarCuenta(cuenta);
               navigation.navigate("Desglos", {
                 participantes,
                 subtotal: totalConsumo,
@@ -318,7 +358,12 @@ export default function Calculator({ navigation }) {
               });
             }}
           >
-            <Text style={styles.btnCalcularText}>Calcular Desglose <Image source={calculator} style={{ width: 24, height: 24 }} /></Text>
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+            >
+              <Text style={styles.btnCalcularText}>Calcular Desglose</Text>
+              <Image source={calculator} style={{ width: 24, height: 24 }} />
+            </View>
           </TouchableOpacity>
         </View>
 
