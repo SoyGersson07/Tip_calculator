@@ -54,6 +54,8 @@ export default function Calculator({ navigation, route }) {
   const [newConsumo, setNewConsumo] = useState("");
   // Monto total de la propina calculada, se puede usar para mostrar o para pasar a la siguiente pantalla
   const [propinaMonto, setPropinaMonto] = useState(null);
+  // Nombre de la cuenta que asigna el usuario
+  const [nombreCuenta, setNombreCuenta] = useState("");
 
   useEffect(() => {
     if (route?.params?.propinaMonto !== undefined) {
@@ -162,6 +164,22 @@ export default function Calculator({ navigation, route }) {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
+          {/* ── SECCIÓN 0: NOMBRE DE LA CUENTA ── */}
+          <View style={styles.sectionNombre}>
+            <Text style={styles.sectionLabel}>NOMBRE DE LA CUENTA</Text>
+          </View>
+          <View style={styles.card}>
+            <View style={styles.nombreInputWrapper}>
+              <TextInput
+                style={styles.nombreInput}
+                value={nombreCuenta}
+                onChangeText={setNombreCuenta}
+                placeholder="Ej: Almuerzo con amigos"
+                placeholderTextColor={C.gray500}
+              />
+            </View>
+          </View>
+
           {/* ── SECCIÓN 1: PARTICIPANTES ── */}
           {/* Muestra la lista de todas las personas en la cuenta y un botón para añadir más */}
           <View style={styles.sectionHeader}>
@@ -338,7 +356,7 @@ export default function Calculator({ navigation, route }) {
             onPress={async () => {
               const cuenta = {
                 id: Date.now(),
-                nombre: "Cuenta", // se puede personalizar después
+                nombre: nombreCuenta.trim() || "Cuenta Sin Nombre",
                 fecha: new Date().toISOString(),
                 personas: activos.length,
                 total: totalAPagar,
@@ -477,6 +495,10 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     marginTop: 4,
   },
+  sectionNombre: {
+    marginBottom: 10,
+    marginTop: 4,
+  },
   sectionLabel: {
     fontSize: 11,
     fontWeight: "800",
@@ -489,6 +511,18 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: C.primary,
     textAlign: "center",
+  },
+
+  // Nombre de la cuenta
+  nombreInputWrapper: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  nombreInput: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: C.darkText,
+    padding: 0,
   },
 
   // Card
