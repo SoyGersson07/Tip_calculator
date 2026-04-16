@@ -8,6 +8,8 @@ import { Text, Image } from "react-native";
 import HomeScreen from "./screens/HomeScreen";
 import CalculatorScreen from "./screens/CalculatorScreen";
 import DesglosScreen from "./screens/DesglosScreen";
+import TipScreen from "./screens/TipScreen";
+import HistorialScreen from "./screens/HistorialScreen";
 
 // Importamos los íconos de la barra de navegación inferior
 import dashboard from "./assets/dashboard.png";
@@ -26,15 +28,13 @@ function HomeStack() {
       <Stack.Screen name="Home" component={HomeScreen} />
       <Stack.Screen name="Calculator" component={CalculatorScreen} />
       <Stack.Screen name="Desglos" component={DesglosScreen} />
+      <Stack.Screen name="Tip" component={TipScreen} />
     </Stack.Navigator>
   );
 }
 
 // Pantallas placeholder para "Historial" y "Ajustes"
 // Estas son solo placeholders, se implementarán en el futuro
-function HistorialScreen() {
-  return null;
-}
 function AjustesScreen() {
   return null;
 }
@@ -71,9 +71,15 @@ export default function App() {
           // Función que renderiza el ícono de cada tab
           tabBarIcon: ({ color, size }) => {
             const icons = {
-              Inicio: <Image source={dashboard} style={{ width: 24, height: 24 }} />,
-              Historial: <Image source={history} style={{ width: 24, height: 24 }} />,
-              Ajustes: <Image source={setting} style={{ width: 24, height: 24 }} />,
+              Inicio: (
+                <Image source={dashboard} style={{ width: 24, height: 24 }} />
+              ),
+              Historial: (
+                <Image source={history} style={{ width: 24, height: 24 }} />
+              ),
+              Ajustes: (
+                <Image source={setting} style={{ width: 24, height: 24 }} />
+              ),
             };
             return (
               <Text style={{ fontSize: 22, color }}>{icons[route.name]}</Text>
