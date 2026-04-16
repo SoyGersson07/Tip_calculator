@@ -10,6 +10,7 @@ import CalculatorScreen from "./screens/CalculatorScreen";
 import DesglosScreen from "./screens/DesglosScreen";
 import TipScreen from "./screens/TipScreen";
 import HistorialScreen from "./screens/HistorialScreen";
+import AjustesScreen from "./screens/AjustesScreen";
 
 // Importamos los íconos de la barra de navegación inferior
 import dashboard from "./assets/dashboard.png";
@@ -31,12 +32,6 @@ function HomeStack() {
       <Stack.Screen name="Tip" component={TipScreen} />
     </Stack.Navigator>
   );
-}
-
-// Pantallas placeholder para "Historial" y "Ajustes"
-// Estas son solo placeholders, se implementarán en el futuro
-function AjustesScreen() {
-  return null;
 }
 
 // Colores principales de la aplicación

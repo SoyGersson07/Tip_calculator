@@ -6,14 +6,14 @@ import { useState, useCallback } from "react";
 // Importamos componentes de React Native para construir la interfaz
 import {
   StyleSheet, Text, View, TouchableOpacity,
-  SafeAreaView, ScrollView, Image,
+  SafeAreaView, ScrollView, Image, Alert,
 } from "react-native";
 
 // Hook de navegación que permite ejecutar código cuando la pantalla entra en foco
 import { useFocusEffect } from "@react-navigation/native";
 
 // Función para obtener el historial guardado
-import { obtenerHistorial } from "../historialStorage";
+import { obtenerHistorial, eliminarCuenta, limpiarHistorial } from "../historialStorage";
 
 // Importamos imágenes que se usan en la UI
 import commerce from "../assets/commerce.png";
@@ -94,14 +94,137 @@ export default function HistorialScreen() {
   // Estado que guarda el historial de cuentas
   const [historial, setHistorial] = useState([]);
 
+  // Estado para activar/desactivar modo de edición (para eliminar)
+  const [modoEdicion, setModoEdicion] = useState(false);
+
+  // Estado que guarda los IDs de cuentas seleccionadas para eliminar
+  const [seleccionados, setSeleccionados] = useState(new Set());
+
   // ======== EFECTO CUANDO LA PANTALLA SE ABRE ========
   // Se ejecuta cada vez que el usuario entra a esta pantalla
   useFocusEffect(
     useCallback(() => {
       // Cargamos el historial desde almacenamiento
       obtenerHistorial().then(setHistorial);
+      // Al entrar a la pantalla, salimos del modo edición
+      setModoEdicion(false);
+      setSeleccionados(new Set());
     }, [])
   );
+
+  // ======== FUNCIONES DE ELIMINACIÓN ========
+
+  // Alternar selección de una cuenta
+  function toggleSeleccion(id) {
+    const nuevo = new Set(seleccionados);
+    if (nuevo.has(id)) {
+      nuevo.delete(id);
+    } else {
+      nuevo.add(id);
+    }
+    setSeleccionados(nuevo);
+  }
+
+  // Eliminar cuentas seleccionadas
+  async function confirmarEliminar() {
+    if (seleccionados.size === 0) return;
+
+    const n = seleccionados.size;
+    const idsArray = Array.from(seleccionados);
+
+    Alert.alert(
+      "Eliminar cuenta" + (n > 1 ? "s" : ""),
+      `¿Está seguro de que desea eliminar ${n} cuenta${n > 1 ? "s" : ""}? Esta acción no se puede deshacer.`,
+      [
+        { text: "Cancelar", onPress: () => {}, style: "cancel" },
+        {
+          text: "Eliminar",
+          onPress: async () => {
+            try {
+              console.log("=== INICIANDO ELIMINACIÓN ===");
+              console.log("IDs a eliminar:", idsArray);
+              
+              // Eliminar cada cuenta seleccionada
+              for (const id of idsArray) {
+                await eliminarCuenta(id);
+              }
+              
+              // Pequeña espera para sincronizar AsyncStorage
+              await new Promise(resolve => setTimeout(resolve, 500));
+              
+              // Recargar historial
+              const nuevo = await obtenerHistorial();
+              console.log("=== ELIMINACIÓN COMPLETADA ===");
+              console.log("Historial actual:", nuevo.length, "cuentas");
+              
+              // Actualizar estado
+              setHistorial(nuevo);
+              setSeleccionados(new Set());
+              setModoEdicion(false);
+              
+              // Mostrar mensaje de éxito
+              if (nuevo.length === 0) {
+                Alert.alert("✓ Éxito", `Se eliminar ${n} cuenta${n > 1 ? "s" : ""}. Historial vacío.`);
+              } else {
+                Alert.alert("✓ Éxito", `Se eliminar ${n} cuenta${n > 1 ? "s" : ""}. Quedan ${nuevo.length} cuentas.`);
+              }
+            } catch (error) {
+              console.error("✗ Error:", error);
+              Alert.alert("Error", "No se pudo eliminar las cuentas");
+            }
+          },
+          style: "destructive",
+        },
+      ]
+    );
+  }
+
+  // Limpiar todo el historial
+  function confirmarLimpiarTodo() {
+    Alert.alert(
+      "Limpiar historial",
+      "¿Está seguro de que desea eliminar TODAS las cuentas? Esta acción no se puede deshacer.",
+      [
+        { text: "Cancelar", onPress: () => {}, style: "cancel" },
+        {
+          text: "Eliminar Todo",
+          onPress: async () => {
+            try {
+              console.log("=== LIMPIANDO TODO EL HISTORIAL ===");
+              await limpiarHistorial();
+              
+              // Pequeña espera
+              await new Promise(resolve => setTimeout(resolve, 500));
+              
+              console.log("=== HISTORIAL LIMPIADO ===");
+              setHistorial([]);
+              setSeleccionados(new Set());
+              setModoEdicion(false);
+            } catch (error) {
+              console.error("✗ Error limpiando:", error);
+              Alert.alert("Error", "No se pudo limpiar el historial");
+            }
+          },
+          style: "destructive",
+        },
+      ]
+    );
+  }
+
+  // Seleccionar todas las cuentas
+  function seleccionarTodas() {
+    if (seleccionados.size === historial.length) {
+      // Si ya están todas seleccionadas, deseleccionar todas
+      setSeleccionados(new Set());
+    } else {
+      // Seleccionar todas
+      console.log("Seleccionando todas. Historial:", historial.length, "cuentas");
+      console.log("IDs disponibles:", historial.map(h => h.id));
+      
+      const ids = new Set(historial.map((item) => item.id));
+      setSeleccionados(ids);
+    }
+  }
 
   // Agrupamos el historial por día
   const grupos = agruparPorDia(historial);
@@ -120,10 +243,19 @@ export default function HistorialScreen() {
         {/* Título */}
         <Text style={s.headerTitle}>Historial de Cuentas</Text>
 
-        {/* Botón de configuración/filtro */}
-        <TouchableOpacity style={s.filterBtn}>
-          <Text style={s.filterIcon}>⚙</Text>
-        </TouchableOpacity>
+        {/* Botón de edición/cancelar según modo */}
+        {historial.length > 0 && (
+          <TouchableOpacity
+            style={s.filterBtn}
+            onPress={() => {
+              setModoEdicion(!modoEdicion);
+              setSeleccionados(new Set());
+            }}
+          >
+            <Text style={s.filterIcon}>{modoEdicion ? "✕" : "···"}</Text>
+          </TouchableOpacity>
+        )}
+        {historial.length === 0 && <View style={{ width: 36 }} />}
       </View>
 
 
@@ -178,13 +310,41 @@ export default function HistorialScreen() {
 
               {/* Renderizamos cada item dentro del grupo */}
               {items.map((item) => (
-
-                <View key={item.id} style={s.card}>
+                <TouchableOpacity
+                  key={item.id}
+                  style={[
+                    s.card,
+                    modoEdicion && seleccionados.has(item.id) && s.cardSeleccionada,
+                  ]}
+                  onPress={() => {
+                    if (modoEdicion) {
+                      toggleSeleccion(item.id);
+                    }
+                  }}
+                  activeOpacity={modoEdicion ? 0.7 : 1}
+                >
+                  {/* Checkbox si estamos en modo edición */}
+                  {modoEdicion && (
+                    <View style={s.checkboxWrap}>
+                      <View
+                        style={[
+                          s.checkbox,
+                          seleccionados.has(item.id) && s.checkboxChecked,
+                        ]}
+                      >
+                        {seleccionados.has(item.id) && (
+                          <Text style={s.checkboxCheck}>✓</Text>
+                        )}
+                      </View>
+                    </View>
+                  )}
 
                   {/* Ícono */}
-                  <View style={s.iconWrap}>
-                    <Image source={commerce} style={{ width: 22, height: 22 }} />
-                  </View>
+                  {!modoEdicion && (
+                    <View style={s.iconWrap}>
+                      <Image source={commerce} style={{ width: 22, height: 22 }} />
+                    </View>
+                  )}
 
                   {/* Información principal */}
                   <View style={s.cardInfo}>
@@ -204,18 +364,19 @@ export default function HistorialScreen() {
                   </View>
 
                   {/* Parte derecha */}
-                  <View style={s.cardRight}>
-                    
-                    {/* Total */}
-                    <Text style={s.cardTotal}>
-                      ${item.total.toFixed(2)}
-                    </Text>
+                  {!modoEdicion && (
+                    <View style={s.cardRight}>
+                      
+                      {/* Total */}
+                      <Text style={s.cardTotal}>
+                        ${item.total.toFixed(2)}
+                      </Text>
 
-                    {/* Flecha */}
-                    <Text style={s.cardChevron}>›</Text>
-                  </View>
-
-                </View>
+                      {/* Flecha */}
+                      <Text style={s.cardChevron}>›</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
               ))}
             </View>
           ))
@@ -227,6 +388,62 @@ export default function HistorialScreen() {
         </Text>
 
       </ScrollView>
+
+      {/* ======== BARRA DE ACCIONES (CUANDO ESTÁ EN MODO EDICIÓN) ======== */}
+      {modoEdicion && historial.length > 0 && (
+        <View style={s.actionBar}>
+          {/* Título con contador */}
+          <View style={s.actionBarLeft}>
+            <Text style={s.actionBarTitle}>
+              {seleccionados.size} de {historial.length}
+            </Text>
+          </View>
+
+          {/* Botones de acción */}
+          <View style={s.actionBarRight}>
+            {/* Botón: Seleccionar Todo */}
+            <TouchableOpacity
+              style={s.actionBtn}
+              onPress={seleccionarTodas}
+              activeOpacity={0.7}
+            >
+              <Text style={s.actionBtnText}>
+                {seleccionados.size === historial.length ? "Deseleccionar" : "Seleccionar Todo"}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Botón: Limpiar Todo */}
+            <TouchableOpacity
+              style={[s.actionBtn, s.actionBtnDanger]}
+              onPress={confirmarLimpiarTodo}
+              activeOpacity={0.7}
+            >
+              <Text style={s.actionBtnDangerText}>Limpiar Todo</Text>
+            </TouchableOpacity>
+
+            {/* Botón: Eliminar Seleccionados */}
+            <TouchableOpacity
+              style={[
+                s.actionBtn,
+                s.actionBtnDanger,
+                seleccionados.size === 0 && s.actionBtnDisabled,
+              ]}
+              onPress={confirmarEliminar}
+              activeOpacity={0.7}
+              disabled={seleccionados.size === 0}
+            >
+              <Text
+                style={[
+                  s.actionBtnDangerText,
+                  seleccionados.size === 0 && s.actionBtnDisabledText,
+                ]}
+              >
+                Eliminar ({seleccionados.size})
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -413,5 +630,88 @@ const s = StyleSheet.create({
     fontSize: 12,
     color: C.gray500,
     marginTop: 24,
+  },
+
+  // Checkbox (modo edición)
+  checkboxWrap: {
+    marginRight: 12,
+  },
+  checkbox: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: C.gray200,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: C.white,
+  },
+  checkboxChecked: {
+    backgroundColor: C.primary,
+    borderColor: C.primary,
+  },
+  checkboxCheck: {
+    color: C.white,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+
+  // Card seleccionada
+  cardSeleccionada: {
+    backgroundColor: "#FDF0ED",
+    borderLeftWidth: 4,
+    borderLeftColor: C.primary,
+  },
+
+  // Action bar (barra inferior con botones)
+  actionBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: C.white,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: C.gray200,
+    gap: 8,
+  },
+  actionBarLeft: {
+    flex: 1,
+  },
+  actionBarTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: C.darkText,
+  },
+  actionBarRight: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  actionBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: C.gray100,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: C.primary,
+  },
+  actionBtnDanger: {
+    backgroundColor: "#FFE5E0",
+  },
+  actionBtnDangerText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#FF3B30",
+  },
+  actionBtnDisabled: {
+    opacity: 0.5,
+  },
+  actionBtnDisabledText: {
+    color: C.gray500,
   },
 });
