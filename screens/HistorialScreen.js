@@ -32,7 +32,7 @@ const C = {
 };
 
 // Tabs disponibles en la parte superior
-const TABS = ["Recientes", "Este Mes", "Favoritos"];
+const TABS = ["Recientes", "Este Mes"];
 
 
 // ======== FUNCIÓN: AGRUPAR HISTORIAL POR DÍA ========
@@ -94,11 +94,8 @@ export default function HistorialScreen() {
   // Estado que guarda el historial de cuentas
   const [historial, setHistorial] = useState([]);
 
-  // Estado para activar/desactivar modo de edición (para eliminar)
-  const [modoEdicion, setModoEdicion] = useState(false);
-
-  // Estado que guarda los IDs de cuentas seleccionadas para eliminar
-  const [seleccionados, setSeleccionados] = useState(new Set());
+  // Estado que guarda el ID de la cuenta expandida
+  const [cuentaExpandida, setCuentaExpandida] = useState(null);
 
   // ======== EFECTO CUANDO LA PANTALLA SE ABRE ========
   // Se ejecuta cada vez que el usuario entra a esta pantalla
@@ -106,128 +103,37 @@ export default function HistorialScreen() {
     useCallback(() => {
       // Cargamos el historial desde almacenamiento
       obtenerHistorial().then(setHistorial);
-      // Al entrar a la pantalla, salimos del modo edición
-      setModoEdicion(false);
-      setSeleccionados(new Set());
     }, [])
   );
 
-  // ======== FUNCIONES DE ELIMINACIÓN ========
+  // ======== FUNCIONES ========
+  
+  const ahora = new Date();
+  const treintaDiasAtras = new Date(ahora.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const inicioDelMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
 
-  // Alternar selección de una cuenta
-  function toggleSeleccion(id) {
-    const nuevo = new Set(seleccionados);
-    if (nuevo.has(id)) {
-      nuevo.delete(id);
-    } else {
-      nuevo.add(id);
-    }
-    setSeleccionados(nuevo);
+  let historialFiltrado;
+
+  if (tabActiva === "Este Mes") {
+    historialFiltrado = historial.filter((item) => {
+      const fecha = new Date(item.fecha);
+      return fecha >= inicioDelMes;
+    });
+  } else {
+    // "Recientes" (últimos 30 días)
+    historialFiltrado = historial.filter((item) => {
+      const fecha = new Date(item.fecha);
+      return fecha >= treintaDiasAtras;
+    });
   }
 
-  // Eliminar cuentas seleccionadas
-  async function confirmarEliminar() {
-    if (seleccionados.size === 0) return;
+  // Agrupar el historial filtrado por día
+  const grupos = agruparPorDia(historialFiltrado);
 
-    const n = seleccionados.size;
-    const idsArray = Array.from(seleccionados);
-
-    Alert.alert(
-      "Eliminar cuenta" + (n > 1 ? "s" : ""),
-      `¿Está seguro de que desea eliminar ${n} cuenta${n > 1 ? "s" : ""}? Esta acción no se puede deshacer.`,
-      [
-        { text: "Cancelar", onPress: () => {}, style: "cancel" },
-        {
-          text: "Eliminar",
-          onPress: async () => {
-            try {
-              console.log("=== INICIANDO ELIMINACIÓN ===");
-              console.log("IDs a eliminar:", idsArray);
-              
-              // Eliminar cada cuenta seleccionada
-              for (const id of idsArray) {
-                await eliminarCuenta(id);
-              }
-              
-              // Pequeña espera para sincronizar AsyncStorage
-              await new Promise(resolve => setTimeout(resolve, 500));
-              
-              // Recargar historial
-              const nuevo = await obtenerHistorial();
-              console.log("=== ELIMINACIÓN COMPLETADA ===");
-              console.log("Historial actual:", nuevo.length, "cuentas");
-              
-              // Actualizar estado
-              setHistorial(nuevo);
-              setSeleccionados(new Set());
-              setModoEdicion(false);
-              
-              // Mostrar mensaje de éxito
-              if (nuevo.length === 0) {
-                Alert.alert("✓ Éxito", `Se eliminar ${n} cuenta${n > 1 ? "s" : ""}. Historial vacío.`);
-              } else {
-                Alert.alert("✓ Éxito", `Se eliminar ${n} cuenta${n > 1 ? "s" : ""}. Quedan ${nuevo.length} cuentas.`);
-              }
-            } catch (error) {
-              console.error("✗ Error:", error);
-              Alert.alert("Error", "No se pudo eliminar las cuentas");
-            }
-          },
-          style: "destructive",
-        },
-      ]
-    );
+  // Función para alternar expansión de una cuenta
+  function toggleExpandir(id) {
+    setCuentaExpandida(cuentaExpandida === id ? null : id);
   }
-
-  // Limpiar todo el historial
-  function confirmarLimpiarTodo() {
-    Alert.alert(
-      "Limpiar historial",
-      "¿Está seguro de que desea eliminar TODAS las cuentas? Esta acción no se puede deshacer.",
-      [
-        { text: "Cancelar", onPress: () => {}, style: "cancel" },
-        {
-          text: "Eliminar Todo",
-          onPress: async () => {
-            try {
-              console.log("=== LIMPIANDO TODO EL HISTORIAL ===");
-              await limpiarHistorial();
-              
-              // Pequeña espera
-              await new Promise(resolve => setTimeout(resolve, 500));
-              
-              console.log("=== HISTORIAL LIMPIADO ===");
-              setHistorial([]);
-              setSeleccionados(new Set());
-              setModoEdicion(false);
-            } catch (error) {
-              console.error("✗ Error limpiando:", error);
-              Alert.alert("Error", "No se pudo limpiar el historial");
-            }
-          },
-          style: "destructive",
-        },
-      ]
-    );
-  }
-
-  // Seleccionar todas las cuentas
-  function seleccionarTodas() {
-    if (seleccionados.size === historial.length) {
-      // Si ya están todas seleccionadas, deseleccionar todas
-      setSeleccionados(new Set());
-    } else {
-      // Seleccionar todas
-      console.log("Seleccionando todas. Historial:", historial.length, "cuentas");
-      console.log("IDs disponibles:", historial.map(h => h.id));
-      
-      const ids = new Set(historial.map((item) => item.id));
-      setSeleccionados(ids);
-    }
-  }
-
-  // Agrupamos el historial por día
-  const grupos = agruparPorDia(historial);
 
 
   // ======== UI ========
@@ -243,19 +149,8 @@ export default function HistorialScreen() {
         {/* Título */}
         <Text style={s.headerTitle}>Historial de Cuentas</Text>
 
-        {/* Botón de edición/cancelar según modo */}
-        {historial.length > 0 && (
-          <TouchableOpacity
-            style={s.filterBtn}
-            onPress={() => {
-              setModoEdicion(!modoEdicion);
-              setSeleccionados(new Set());
-            }}
-          >
-            <Text style={s.filterIcon}>{modoEdicion ? "✕" : "···"}</Text>
-          </TouchableOpacity>
-        )}
-        {historial.length === 0 && <View style={{ width: 36 }} />}
+        {/* Espacio vacío derecho */}
+        <View style={{ width: 36 }} />
       </View>
 
 
@@ -310,61 +205,40 @@ export default function HistorialScreen() {
 
               {/* Renderizamos cada item dentro del grupo */}
               {items.map((item) => (
-                <TouchableOpacity
-                  key={item.id}
-                  style={[
-                    s.card,
-                    modoEdicion && seleccionados.has(item.id) && s.cardSeleccionada,
-                  ]}
-                  onPress={() => {
-                    if (modoEdicion) {
-                      toggleSeleccion(item.id);
-                    }
-                  }}
-                  activeOpacity={modoEdicion ? 0.7 : 1}
-                >
-                  {/* Checkbox si estamos en modo edición */}
-                  {modoEdicion && (
-                    <View style={s.checkboxWrap}>
-                      <View
-                        style={[
-                          s.checkbox,
-                          seleccionados.has(item.id) && s.checkboxChecked,
-                        ]}
-                      >
-                        {seleccionados.has(item.id) && (
-                          <Text style={s.checkboxCheck}>✓</Text>
-                        )}
-                      </View>
-                    </View>
-                  )}
-
-                  {/* Ícono */}
-                  {!modoEdicion && (
+                <View key={item.id}>
+                  <TouchableOpacity
+                    style={[
+                      s.card,
+                      cuentaExpandida === item.id && s.cardExpanded,
+                    ]}
+                    onPress={() => {
+                      toggleExpandir(item.id);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    {/* Ícono */}
                     <View style={s.iconWrap}>
                       <Image source={commerce} style={{ width: 22, height: 22 }} />
                     </View>
-                  )}
 
-                  {/* Información principal */}
-                  <View style={s.cardInfo}>
-                    
-                    {/* Nombre de la cuenta */}
-                    <Text style={s.cardNombre}>{item.nombre}</Text>
+                    {/* Información principal */}
+                    <View style={s.cardInfo}>
+                      
+                      {/* Nombre de la cuenta */}
+                      <Text style={s.cardNombre}>{item.nombre}</Text>
 
-                    {/* Meta: personas + hora */}
-                    <Text style={s.cardMeta}>
-                      {item.personas} persona{item.personas !== 1 ? "s" : ""}  ·  {fmtHora(item.fecha)}
-                    </Text>
+                      {/* Meta: personas + hora */}
+                      <Text style={s.cardMeta}>
+                        {item.personas} persona{item.personas !== 1 ? "s" : ""}  ·  {fmtHora(item.fecha)}
+                      </Text>
 
-                    {/* Propina */}
-                    <Text style={s.cardPropina}>
-                      Propina: ${item.propina.toFixed(2)} ({item.pct}%)
-                    </Text>
-                  </View>
+                      {/* Propina */}
+                      <Text style={s.cardPropina}>
+                        Propina: ${item.propina.toFixed(2)} ({item.pct}%)
+                      </Text>
+                    </View>
 
-                  {/* Parte derecha */}
-                  {!modoEdicion && (
+                    {/* Parte derecha */}
                     <View style={s.cardRight}>
                       
                       {/* Total */}
@@ -373,10 +247,75 @@ export default function HistorialScreen() {
                       </Text>
 
                       {/* Flecha */}
-                      <Text style={s.cardChevron}>›</Text>
+                      <Text style={[
+                        s.cardChevron,
+                        cuentaExpandida === item.id && s.cardChevronRotated
+                      ]}>›</Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  {/* PANEL EXPANDIDO CON INFORMACIÓN COMPLETA */}
+                  {cuentaExpandida === item.id && (
+                    <View style={s.cardExpandedContent}>
+                      {/* Divider */}
+                      <View style={s.divider} />
+
+                      {/* Fila: Monto Original */}
+                      <View style={s.detailRow}>
+                        <Text style={s.detailLabel}>Monto Original:</Text>
+                        <Text style={s.detailValue}>${(item.total - item.propina).toFixed(2)}</Text>
+                      </View>
+
+                      {/* Fila: Porcentaje */}
+                      <View style={s.detailRow}>
+                        <Text style={s.detailLabel}>Porcentaje Propina:</Text>
+                        <Text style={s.detailValue}>{item.pct}%</Text>
+                      </View>
+
+                      {/* Fila: Propina */}
+                      <View style={s.detailRow}>
+                        <Text style={s.detailLabel}>Propina:</Text>
+                        <Text style={[s.detailValue, s.detailValueHighlight]}>
+                          ${item.propina.toFixed(2)}
+                        </Text>
+                      </View>
+
+                      {/* Divider */}
+                      <View style={s.divider} />
+
+                      {/* Fila: Total con personas */}
+                      <View style={s.detailRow}>
+                        <Text style={s.detailLabel}>Total ({item.personas} {item.personas === 1 ? "persona" : "personas"}):</Text>
+                        <Text style={s.detailTotal}>
+                          ${item.total.toFixed(2)}
+                        </Text>
+                      </View>
+
+                      {/* Fila: Por persona */}
+                      <View style={s.detailRow}>
+                        <Text style={s.detailLabel}>Por persona:</Text>
+                        <Text style={[s.detailValue, s.detailValueHighlight]}>
+                          ${(item.total / item.personas).toFixed(2)}
+                        </Text>
+                      </View>
+
+                      {/* Fila: Fecha */}
+                      <View style={s.detailRow}>
+                        <Text style={s.detailLabel}>Fecha:</Text>
+                        <Text style={s.detailValue}>
+                          {new Date(item.fecha).toLocaleDateString("es-ES", {
+                            weekday: "short",
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit"
+                          })}
+                        </Text>
+                      </View>
                     </View>
                   )}
-                </TouchableOpacity>
+                </View>
               ))}
             </View>
           ))
@@ -388,62 +327,6 @@ export default function HistorialScreen() {
         </Text>
 
       </ScrollView>
-
-      {/* ======== BARRA DE ACCIONES (CUANDO ESTÁ EN MODO EDICIÓN) ======== */}
-      {modoEdicion && historial.length > 0 && (
-        <View style={s.actionBar}>
-          {/* Título con contador */}
-          <View style={s.actionBarLeft}>
-            <Text style={s.actionBarTitle}>
-              {seleccionados.size} de {historial.length}
-            </Text>
-          </View>
-
-          {/* Botones de acción */}
-          <View style={s.actionBarRight}>
-            {/* Botón: Seleccionar Todo */}
-            <TouchableOpacity
-              style={s.actionBtn}
-              onPress={seleccionarTodas}
-              activeOpacity={0.7}
-            >
-              <Text style={s.actionBtnText}>
-                {seleccionados.size === historial.length ? "Deseleccionar" : "Seleccionar Todo"}
-              </Text>
-            </TouchableOpacity>
-
-            {/* Botón: Limpiar Todo */}
-            <TouchableOpacity
-              style={[s.actionBtn, s.actionBtnDanger]}
-              onPress={confirmarLimpiarTodo}
-              activeOpacity={0.7}
-            >
-              <Text style={s.actionBtnDangerText}>Limpiar Todo</Text>
-            </TouchableOpacity>
-
-            {/* Botón: Eliminar Seleccionados */}
-            <TouchableOpacity
-              style={[
-                s.actionBtn,
-                s.actionBtnDanger,
-                seleccionados.size === 0 && s.actionBtnDisabled,
-              ]}
-              onPress={confirmarEliminar}
-              activeOpacity={0.7}
-              disabled={seleccionados.size === 0}
-            >
-              <Text
-                style={[
-                  s.actionBtnDangerText,
-                  seleccionados.size === 0 && s.actionBtnDisabledText,
-                ]}
-              >
-                Eliminar ({seleccionados.size})
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
     </SafeAreaView>
   );
 }
@@ -598,6 +481,83 @@ const s = StyleSheet.create({
     color: C.gray200,
   },
 
+  cardChevronRotated: {
+    transform: [{ rotate: "90deg" }],
+  },
+
+  cardExpanded: {
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+  },
+
+  // Panel expandido
+  cardExpandedContent: {
+    backgroundColor: C.white,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    marginBottom: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+
+  divider: {
+    height: 1,
+    backgroundColor: C.gray100,
+    marginVertical: 12,
+  },
+
+  detailRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginVertical: 8,
+  },
+
+  detailLabel: {
+    fontSize: 13,
+    color: C.gray500,
+    fontWeight: "500",
+  },
+
+  detailValue: {
+    fontSize: 13,
+    color: C.darkText,
+    fontWeight: "600",
+  },
+
+  detailValueHighlight: {
+    color: C.primary,
+    fontWeight: "700",
+  },
+
+  detailTotal: {
+    fontSize: 14,
+    color: C.darkText,
+    fontWeight: "800",
+  },
+
+  // Botón de eliminar individual
+  deleteBtn: {
+    marginTop: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: "#FFE5E0",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  deleteBtnText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#FF3B30",
+  },
+
   // Estado vacío
   emptyState: {
     alignItems: "center",
@@ -633,85 +593,4 @@ const s = StyleSheet.create({
   },
 
   // Checkbox (modo edición)
-  checkboxWrap: {
-    marginRight: 12,
-  },
-  checkbox: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: C.gray200,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: C.white,
-  },
-  checkboxChecked: {
-    backgroundColor: C.primary,
-    borderColor: C.primary,
-  },
-  checkboxCheck: {
-    color: C.white,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-
-  // Card seleccionada
-  cardSeleccionada: {
-    backgroundColor: "#FDF0ED",
-    borderLeftWidth: 4,
-    borderLeftColor: C.primary,
-  },
-
-  // Action bar (barra inferior con botones)
-  actionBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: C.white,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderTopColor: C.gray200,
-    gap: 8,
-  },
-  actionBarLeft: {
-    flex: 1,
-  },
-  actionBarTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: C.darkText,
-  },
-  actionBarRight: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  actionBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: C.gray100,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  actionBtnText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: C.primary,
-  },
-  actionBtnDanger: {
-    backgroundColor: "#FFE5E0",
-  },
-  actionBtnDangerText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#FF3B30",
-  },
-  actionBtnDisabled: {
-    opacity: 0.5,
-  },
-  actionBtnDisabledText: {
-    color: C.gray500,
-  },
 });

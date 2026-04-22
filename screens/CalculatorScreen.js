@@ -1,5 +1,5 @@
 // Importamos React y los componentes necesarios de React Native, además de las imágenes que se usarán en la interfaz.
-import { useState, useEffect } from "react";
+import { useState, useCallback } from "react";
 import {
   StyleSheet,
   Text,
@@ -14,6 +14,9 @@ import {
   Platform,
   Image,
 } from "react-native";
+
+// Hook de navegación para detectar cuando la pantalla entra en foco
+import { useFocusEffect } from "@react-navigation/native";
 
 // se importan las imagenes
 import web from "../assets/web.png";
@@ -57,11 +60,35 @@ export default function Calculator({ navigation, route }) {
   // Nombre de la cuenta que asigna el usuario
   const [nombreCuenta, setNombreCuenta] = useState("");
 
-  useEffect(() => {
-    if (route?.params?.propinaMonto !== undefined) {
-      setPropinaMonto(route.params.propinaMonto);
-    }
-  }, [route?.params?.propinaMonto]);
+  // Se ejecuta cuando la pantalla recibe el foco (cuando regresas desde TipScreen)
+  // Esto actualiza SOLO la propina sin resetear los demás estados
+  useFocusEffect(
+    useCallback(() => {
+      // Si hay un propinaMonto en los parámetros, actualiza ese value
+      if (route?.params?.propinaMonto !== undefined) {
+        setPropinaMonto(route.params.propinaMonto);
+      }
+
+      // Si vienen participantes desde TipScreen, restaurarlos
+      if (route?.params?.participantes && route.params.participantes.length > 1) {
+        setParticipantes(route.params.participantes);
+      }
+
+      // Si viene nombreCuenta desde TipScreen, restaurarlo
+      if (route?.params?.nombreCuenta) {
+        setNombreCuenta(route.params.nombreCuenta);
+      }
+
+      // Limpiar los parámetros para evitar que se ejecute de nuevo
+      if (route?.params?.propinaMonto !== undefined) {
+        navigation.setParams({ 
+          propinaMonto: undefined,
+          participantes: undefined,
+          nombreCuenta: undefined,
+        });
+      }
+    }, [route?.params, navigation])
+  );
 
   // ── Cálculos ──────────────────────────────────────────────────────────────
 
@@ -71,30 +98,35 @@ export default function Calculator({ navigation, route }) {
   // Se declara variable para participantes excluidos del pago, por si queremos mostrar su consumo total o propina aparte (opcional)
   const excluidos = participantes.filter((p) => p.excluido);
 
-  // El subtotal se calcula solo sobre participantes activos, ya que los excluidos no aportan al total a pagar ni a la propina.
+  // El subtotal se calcula solo sobre participantes activos (quienes van a pagar)
   const subtotal = activos.reduce(
     (sum, p) => sum + (parseFloat(p.consumo) || 0),
     0,
   );
-  // El total de consumo de excluidos se calcula aparte por si queremos mostrarlo o usarlo para cálculos adicionales, pero no se suma al subtotal ni a la base de propina, ya que su consumo no aporta al total a pagar ni a la propina.
+  
+  // El total de consumo de excluidos se calcula aparte (invitados que no pagan)
   const totalExcluidos = excluidos.reduce(
     (sum, p) => sum + (parseFloat(p.consumo) || 0),
     0,
   );
 
-  // La propina se calcula sobre TODO (activos + excluidos)
+  // La propina se calcula sobre TODO el consumo (activos + excluidos)
   const totalConsumo = subtotal + totalExcluidos;
   const propina =
     propinaMonto !== null ? propinaMonto : totalConsumo * (TIP_PCT / 100);
+  
+  // Total a pagar = consumo total + propina
   const totalAPagar = totalConsumo + propina;
 
-  // Propina a repartir entre activos = propina sobre excluidos + propina propia
-  // Simplificado: total a pagar / activos.length
+  // CORRECCIÓN: Propina por persona = propina total / número de activos
+  // (La propina se divide SOLO entre los que van a pagar, no entre todos)
   const propinaPorPersona =
-    activos.length > 0 ? totalAPagar / activos.length : 0;
+    activos.length > 0 ? propina / activos.length : 0;
 
+  // Porcentaje = (propina total / consumo TOTAL) * 100
+  // Esto muestra qué porcentaje representa la propina sobre la factura completa (incluyendo invitados)
   const pctDelConsumo =
-    subtotal > 0 ? ((propinaPorPersona / subtotal) * 100).toFixed(1) : 0;
+    totalConsumo > 0 ? ((propina / totalConsumo) * 100).toFixed(1) : 0;
 
   // ── Acciones ──────────────────────────────────────────────────────────────
 
@@ -265,7 +297,7 @@ export default function Calculator({ navigation, route }) {
             </View>
             {/* Fila 2: Propina (con borde superior e inferior) */}
             <View style={[styles.summaryRow, styles.summaryRowBorder]}>
-              <Text style={styles.summaryPropLabel}>Propina ({TIP_PCT}%)</Text>
+              <Text style={styles.summaryPropLabel}>Propina ({pctDelConsumo}%)</Text>
               <Text style={styles.summaryPropValue}>+{fmt(propina)}</Text>
             </View>
             {/* Fila 3: TOTAL A PAGAR (la más importante) */}
@@ -281,7 +313,13 @@ export default function Calculator({ navigation, route }) {
             style={styles.sectionHeader}
             activeOpacity={0.7}
             onPress={() =>
-              navigation.navigate("Tip", { subtotal: totalConsumo })
+              navigation.navigate("Tip", { 
+                subtotal: subtotal,
+                totalConsumo: totalConsumo,
+                // Pasar también los participantes y nombre de cuenta para preservarlos
+                participantes: participantes,
+                nombreCuenta: nombreCuenta,
+              })
             }
           >
             <Text style={styles.sectionLabel}>CONFIGURAR PROPINA</Text>

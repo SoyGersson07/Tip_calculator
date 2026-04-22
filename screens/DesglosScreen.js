@@ -38,28 +38,22 @@ export default function DesglosScreen({ route, navigation }) {
   // Si no vienen datos, usamos valores por defecto (vacíos/0)
   const {
     participantes = [], // Lista de personas que son parte de la cuenta
-    tipPct = 10, // Porcentaje de propina (10% por defecto)
-    subtotal = 0, // Total de consumo sin propina
-    propina = 0, // Monto total de propina
+    subtotal = 0, // Total de consumo de activos (sin propina)
+    propina = 0, // Monto total de propina (ingresado manualmente o calculado)
     totalAPagar = 0, // Monto final a pagar (subtotal + propina)
+    propinaPorPersona = 0, // Propina dividida entre activos
+    pctDelConsumo = 10, // Porcentaje real de la propina sobre el consumo de activos
   } = route?.params || {};
 
   // ======== LÓGICA DE CÁLCULOS ========
   // Filtramos solo los participantes NO excluidos (que sí pagan)
   const activos = participantes.filter((p) => !p.excluido);
   
-  // Calculamos el Total de consumo de los participantes EXCLUIDOS (invitados)
+  // Calculamos el total de consumo de los participantes EXCLUIDOS (invitados)
   // Estos participantes no pagan pero sus consumos se reparten entre los activos
   const totalExcluidos = participantes
     .filter((p) => p.excluido) // Solo los excluidos
     .reduce((s, p) => s + (parseFloat(p.consumo) || 0), 0); // Suma de consumos
-
-  // Propina que generan los excluidos, repartida entre los participantes activos
-  // Si hay participantes activos, dividimos la propina de excluidos entre ellos
-  const propinaExcluidosPorActivo =
-    activos.length > 0
-      ? (totalExcluidos * (tipPct / 100)) / activos.length
-      : 0;
   
   // Consumo de excluidos repartido entre los participantes activos
   const consumoExcluidosPorActivo =
@@ -67,20 +61,18 @@ export default function DesglosScreen({ route, navigation }) {
 
   // Función para calcular el TOTAL que debe pagar un participante
   // Si es un excluido (invitado), paga 0 (sus gastos se cubren)
-  // Si es activo, paga: su consumo + su propina + su parte del consumo de excluidos + su parte de la propina de excluidientos
+  // Si es activo, paga: su consumo + su parte del consumo de excluidos + propina por persona
   function totalParticipante(p) {
     if (p.excluido) return 0; // Los invitados no pagan nada
     const consumo = parseFloat(p.consumo) || 0; // Su consumo individual
-    const propinaPropia = consumo * (tipPct / 100); // Propina sobre su consumo
-    // Total = consumo + propina propia + su parte del consumo de excluidos + su parte de la propina de excluidos
-    return consumo + propinaPropia + consumoExcluidosPorActivo + propinaExcluidosPorActivo;
+    // Total = consumo del participante + su parte de consumo de excluidos + propina por persona
+    return consumo + consumoExcluidosPorActivo + propinaPorPersona;
   }
 
   // Función para calcular sólo la PROPINA que paga un participante
-  // Incluye: propina sobre su consumo + su parte de la propina de los excluidos
+  // Es simplemente la propina dividida entre activos
   function propinaParticipante(p) {
-    const consumo = parseFloat(p.consumo) || 0;
-    return consumo * (tipPct / 100) + propinaExcluidosPorActivo;
+    return p.excluido ? 0 : propinaPorPersona;
   }
 
   // Función para compartir el resultado de la cuenta
@@ -96,7 +88,7 @@ export default function DesglosScreen({ route, navigation }) {
     const texto =
       `🧾 Desglose de cuenta - PropinaPlus\n\n` + // Encabezado
       lines.join("\n") + // Lista de participantes
-      `\n\nSubtotal: ${fmt(subtotal)}\nPropina (${tipPct}%): ${fmt(propina)}\nTOTAL: ${fmt(totalAPagar)}`; // Resumen final
+      `\n\nSubtotal: ${fmt(subtotal)}\nPropina (${pctDelConsumo}%): ${fmt(propina)}\nTOTAL: ${fmt(totalAPagar)}`; // Resumen final con porcentaje real
     
     // Abrimos el diálogo de compartir del dispositivo
     await Share.share({ message: texto });
@@ -221,7 +213,7 @@ export default function DesglosScreen({ route, navigation }) {
               Subtotal: {fmt(subtotal)}
             </Text>
             <Text style={styles.totalCardFooterText}>
-              Propina ({tipPct}%): {fmt(propina)}
+              Propina ({pctDelConsumo}%): {fmt(propina)}
             </Text>
           </View>
         </View>

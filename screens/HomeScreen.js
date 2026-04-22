@@ -35,6 +35,8 @@ const C = {
 export default function HomeScreen({ navigation }) {
   // Estado que almacena el historial de cuentas leído desde AsyncStorage
   const [historial, setHistorial] = useState([]);
+  // Estado que guarda el ID de la cuenta expandida
+  const [cuentaExpandida, setCuentaExpandida] = useState(null);
 
   // Cada vez que el usuario enfoca esta pantalla, recargamos el historial
   useFocusEffect(
@@ -112,23 +114,93 @@ export default function HomeScreen({ navigation }) {
         ) : (
           // Si hay cuentas, mostrar las 3 más recientes
           recientes.map((item) => (
-            <View key={item.id} style={styles.historialCard}>
-              {/* Ícono de la cuenta */}
-              <View style={styles.historialIconWrap}>
-                <Image source={commerce} style={{ width: 22, height: 22 }} />
-              </View>
-              {/* Información: nombre, fecha y personas */}
-              <View style={styles.historialInfo}>
-                <Text style={styles.historialNombre}>{item.nombre}</Text>
-                <Text style={styles.historialFecha}>
-                  {item.personas} persona{item.personas !== 1 ? "s" : ""} · {new Date(item.fecha).toLocaleDateString("es-ES")}
-                </Text>
-              </View>
-              {/* Totales: monto pagado y propina */}
-              <View style={styles.historialAmounts}>
-                <Text style={styles.historialTotal}>${item.total.toFixed(2)}</Text>
-                <Text style={styles.historialPropina}>Propina: ${item.propina.toFixed(2)}</Text>
-              </View>
+            <View key={item.id}>
+              <TouchableOpacity
+                style={[styles.historialCard, cuentaExpandida === item.id && styles.historialCardExpanded]}
+                onPress={() => setCuentaExpandida(cuentaExpandida === item.id ? null : item.id)}
+                activeOpacity={0.7}
+              >
+                {/* Ícono de la cuenta */}
+                <View style={styles.historialIconWrap}>
+                  <Image source={commerce} style={{ width: 22, height: 22 }} />
+                </View>
+                {/* Información: nombre, fecha y personas */}
+                <View style={styles.historialInfo}>
+                  <Text style={styles.historialNombre}>{item.nombre}</Text>
+                  <Text style={styles.historialFecha}>
+                    {item.personas} persona{item.personas !== 1 ? "s" : ""} · {new Date(item.fecha).toLocaleDateString("es-ES")}
+                  </Text>
+                </View>
+                {/* Totales: monto pagado y propina */}
+                <View style={styles.historialAmounts}>
+                  <Text style={styles.historialTotal}>${item.total.toFixed(2)}</Text>
+                  <Text style={styles.historialPropina}>Propina: ${item.propina.toFixed(2)}</Text>
+                </View>
+                {/* Chevron */}
+                <Text style={[styles.chevron, cuentaExpandida === item.id && styles.chevronRotated]}>›</Text>
+              </TouchableOpacity>
+
+              {/* PANEL EXPANDIDO */}
+              {cuentaExpandida === item.id && (
+                <View style={styles.cardExpandedContent}>
+                  {/* Divider */}
+                  <View style={styles.divider} />
+
+                  {/* Fila: Monto Original */}
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Monto Original:</Text>
+                    <Text style={styles.detailValue}>${(item.total - item.propina).toFixed(2)}</Text>
+                  </View>
+
+                  {/* Fila: Porcentaje */}
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Porcentaje Propina:</Text>
+                    <Text style={styles.detailValue}>{item.pct}%</Text>
+                  </View>
+
+                  {/* Fila: Propina */}
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Propina:</Text>
+                    <Text style={[styles.detailValue, styles.detailValueHighlight]}>
+                      ${item.propina.toFixed(2)}
+                    </Text>
+                  </View>
+
+                  {/* Divider */}
+                  <View style={styles.divider} />
+
+                  {/* Fila: Total con personas */}
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Total ({item.personas} {item.personas === 1 ? "persona" : "personas"}):</Text>
+                    <Text style={styles.detailTotal}>
+                      ${item.total.toFixed(2)}
+                    </Text>
+                  </View>
+
+                  {/* Fila: Por persona */}
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Por persona:</Text>
+                    <Text style={[styles.detailValue, styles.detailValueHighlight]}>
+                      ${(item.total / item.personas).toFixed(2)}
+                    </Text>
+                  </View>
+
+                  {/* Fila: Fecha */}
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Fecha:</Text>
+                    <Text style={styles.detailValue}>
+                      {new Date(item.fecha).toLocaleDateString("es-ES", {
+                        weekday: "short",
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit"
+                      })}
+                    </Text>
+                  </View>
+                </View>
+              )}
             </View>
           ))
         )}
@@ -191,4 +263,60 @@ const styles = StyleSheet.create({
   historialAmounts: { alignItems: "flex-end" },
   historialTotal: { fontSize: 16, fontWeight: "800", color: C.darkText, marginBottom: 3 },
   historialPropina: { fontSize: 12, fontWeight: "600", color: C.green },
+  historialCardExpanded: {
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+  },
+  chevron: {
+    fontSize: 24,
+    color: C.gray500,
+    marginLeft: 8,
+  },
+  chevronRotated: {
+    transform: [{ rotate: "90deg" }],
+  },
+  // Panel expandido
+  cardExpandedContent: {
+    backgroundColor: C.white,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    marginBottom: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: C.gray200,
+    marginVertical: 12,
+  },
+  detailRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginVertical: 8,
+  },
+  detailLabel: {
+    fontSize: 13,
+    color: C.gray500,
+    fontWeight: "500",
+  },
+  detailValue: {
+    fontSize: 13,
+    color: C.darkText,
+    fontWeight: "600",
+  },
+  detailValueHighlight: {
+    color: C.primary,
+    fontWeight: "700",
+  },
+  detailTotal: {
+    fontSize: 14,
+    color: C.darkText,
+    fontWeight: "800",
+  },
 });

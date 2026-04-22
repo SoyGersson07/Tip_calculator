@@ -1,5 +1,8 @@
-// Importamos el hook useState para manejar estados dentro del componente
-import { useState } from "react";
+// Importamos hooks de React
+import { useState, useCallback } from "react";
+
+// Hook de navegación para usar setParams
+import { useFocusEffect } from "@react-navigation/native";
 
 // Importamos los componentes necesarios de React Native para construir la interfaz
 import {
@@ -20,9 +23,13 @@ const C = {
 // Exportamos el componente principal de la pantalla de configuración de propina
 export default function TipScreen({ route, navigation }) {
 
-  // Obtenemos el subtotal que viene desde la pantalla anterior (Calculator)
-  // Si no viene nada, por defecto será 0
-  const { subtotal = 0 } = route?.params || {};
+  // Obtenemos los parámetros que vienen desde CalculatorScreen
+  const { 
+    subtotal = 0,              // Consumo de activos
+    totalConsumo = 0,          // Consumo total (activos + excluidos)
+    participantes = [], 
+    nombreCuenta = "" 
+  } = route?.params || {};
 
   // Estado que guarda el valor de la propina que el usuario escribe
   const [valor, setValor] = useState("");
@@ -52,8 +59,9 @@ export default function TipScreen({ route, navigation }) {
   // Convertimos el valor ingresado a número
   const numerico = parseFloat(valor) || 0;
 
-  // Calculamos qué porcentaje representa la propina respecto al subtotal
-  const pct = subtotal > 0 ? ((numerico / subtotal) * 100).toFixed(1) : "0.0";
+  // Calculamos qué porcentaje representa la propina respecto al consumo total
+  // La propina se calcula sobre TODA la factura (activos + excluidos)
+  const pct = totalConsumo > 0 ? ((numerico / totalConsumo) * 100).toFixed(1) : "0.0";
 
   // Definimos las teclas del teclado numérico personalizado
   const keys = ["1","2","3","4","5","6","7","8","9",".","0","⌫"];
@@ -136,10 +144,14 @@ export default function TipScreen({ route, navigation }) {
           style={s.btnAplicar}
           activeOpacity={0.88}
           
-          // Navega a Calculator enviando la propina calculada
+          // Navega a Calculator enviando la propina calculada junto con participantes
+          // Esto preserva los datos ingresados sin resetear nada
           onPress={() =>
             navigation.navigate("Calculator", {
               propinaMonto: numerico,
+              // Pasar de vuelta los participantes y nombre de cuenta
+              participantes: participantes,
+              nombreCuenta: nombreCuenta,
             })
           }
         >
