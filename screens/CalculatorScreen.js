@@ -1,5 +1,4 @@
-// Importamos React y los componentes necesarios de React Native, además de las imágenes que se usarán en la interfaz.
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   StyleSheet,
   Text,
@@ -14,138 +13,133 @@ import {
   Platform,
   Image,
 } from "react-native";
-
-// Hook de navegación para detectar cuando la pantalla entra en foco
 import { useFocusEffect } from "@react-navigation/native";
 
-// se importan las imagenes
 import web from "../assets/web.png";
 import profile from "../assets/profile.png";
 import people from "../assets/people.png";
 import calculator from "../assets/calculator.png";
 import { guardarCuenta } from "../historialStorage";
+import {
+  obtenerRedondeo,
+  obtenerMoneda,
+  obtenerSimboloMoneda,
+} from "../settingsStorage";
+import { Colors, TIP_PCT } from "../constants";
 
-// se declaran constates de colores y porcentaje de propina para mantener consistencia y facilitar cambios futuros
-const C = {
-  primary: "#E2725B",
-  primaryLight: "#FDF0ED",
-  primaryBg: "#FAE8E3",
-  bgMain: "#F6F4F0",
-  white: "#FFFFFF",
-  darkText: "#1C1C1E",
-  gray500: "#8E8E93",
-  gray200: "#E5E5EA",
-  gray100: "#F2F2F7",
-  green: "#34C759",
-};
-
-const TIP_PCT = 10; // fijo 10% por ahora
-
-// Se exporta el componente principal de la pantalla de calculadora que recibe la navegación como prop
 export default function Calculator({ navigation, route }) {
-  // ======== STATES (Estados) ========
-  // Lista de participantes que se va a mostrar en la pantalla
-  // Cada participante tiene: id (único), nombre, consumo, y si está excluido o no
   const [participantes, setParticipantes] = useState([
-    { id: 1, nombre: "Tú", consumo: "", excluido: false }, // El primer participante siempre eres tú
+    { id: 1, nombre: "Tú", consumo: "", excluido: false },
   ]);
-  // Controla si el modal de "Añadir participante" está visible o no
   const [modalVisible, setModalVisible] = useState(false);
-  // Nombre del nuevo participante que se está escribiendo en el modal
   const [newNombre, setNewNombre] = useState("");
-  // Consumo del nuevo participante que se está escribiendo en el modal
   const [newConsumo, setNewConsumo] = useState("");
-  // Monto total de la propina calculada, se puede usar para mostrar o para pasar a la siguiente pantalla
   const [propinaMonto, setPropinaMonto] = useState(null);
-  // Nombre de la cuenta que asigna el usuario
   const [nombreCuenta, setNombreCuenta] = useState("");
+  const [redondeoActivo, setRedondeoActivo] = useState(true);
+  const [moneda, setMoneda] = useState("USD");
+  const [simboloMoneda, setSimboloMoneda] = useState("$");
 
-  // Se ejecuta cuando la pantalla recibe el foco (cuando regresas desde TipScreen)
-  // Esto actualiza SOLO la propina sin resetear los demás estados
   useFocusEffect(
     useCallback(() => {
-      // Si hay un propinaMonto en los parámetros, actualiza ese value
       if (route?.params?.propinaMonto !== undefined) {
         setPropinaMonto(route.params.propinaMonto);
       }
 
-      // Si vienen participantes desde TipScreen, restaurarlos
-      if (route?.params?.participantes && route.params.participantes.length > 1) {
+      if (
+        route?.params?.participantes &&
+        route.params.participantes.length > 1
+      ) {
         setParticipantes(route.params.participantes);
       }
 
-      // Si viene nombreCuenta desde TipScreen, restaurarlo
       if (route?.params?.nombreCuenta) {
         setNombreCuenta(route.params.nombreCuenta);
       }
 
-      // Limpiar los parámetros para evitar que se ejecute de nuevo
       if (route?.params?.propinaMonto !== undefined) {
-        navigation.setParams({ 
+        navigation.setParams({
           propinaMonto: undefined,
           participantes: undefined,
           nombreCuenta: undefined,
         });
       }
+
+      obtenerRedondeo().then(setRedondeoActivo);
+      obtenerMoneda().then((cod) => {
+        setMoneda(cod);
+        setSimboloMoneda(obtenerSimboloMoneda(cod));
+      });
     }, [route?.params, navigation])
   );
 
-  // ── Cálculos ──────────────────────────────────────────────────────────────
-
-  // Se declara variable para participantes activos en el pago, para calcular su consumo total y propina a repartir entre ellos
-  const activos = participantes.filter((p) => !p.excluido);
-
-  // Se declara variable para participantes excluidos del pago, por si queremos mostrar su consumo total o propina aparte (opcional)
-  const excluidos = participantes.filter((p) => p.excluido);
-
-  // El subtotal se calcula solo sobre participantes activos (quienes van a pagar)
-  const subtotal = activos.reduce(
-    (sum, p) => sum + (parseFloat(p.consumo) || 0),
-    0,
-  );
-  
-  // El total de consumo de excluidos se calcula aparte (invitados que no pagan)
-  const totalExcluidos = excluidos.reduce(
-    (sum, p) => sum + (parseFloat(p.consumo) || 0),
-    0,
+  const activos = useMemo(
+    () => participantes.filter((p) => !p.excluido),
+    [participantes]
   );
 
-  // La propina se calcula sobre TODO el consumo (activos + excluidos)
-  const totalConsumo = subtotal + totalExcluidos;
-  const propina =
-    propinaMonto !== null ? propinaMonto : totalConsumo * (TIP_PCT / 100);
-  
-  // Total a pagar = consumo total + propina
-  const totalAPagar = totalConsumo + propina;
+  const excluidos = useMemo(
+    () => participantes.filter((p) => p.excluido),
+    [participantes]
+  );
 
-  // CORRECCIÓN: Propina por persona = propina total / número de activos
-  // (La propina se divide SOLO entre los que van a pagar, no entre todos)
-  const propinaPorPersona =
-    activos.length > 0 ? propina / activos.length : 0;
+  const subtotal = useMemo(
+    () =>
+      activos.reduce((sum, p) => sum + (parseFloat(p.consumo) || 0), 0),
+    [activos]
+  );
 
-  // Porcentaje = (propina total / consumo TOTAL) * 100
-  // Esto muestra qué porcentaje representa la propina sobre la factura completa (incluyendo invitados)
-  const pctDelConsumo =
-    totalConsumo > 0 ? ((propina / totalConsumo) * 100).toFixed(1) : 0;
+  const totalExcluidos = useMemo(
+    () =>
+      excluidos.reduce((sum, p) => sum + (parseFloat(p.consumo) || 0), 0),
+    [excluidos]
+  );
 
-  // ── Acciones ──────────────────────────────────────────────────────────────
+  const totalConsumo = useMemo(
+    () => subtotal + totalExcluidos,
+    [subtotal, totalExcluidos]
+  );
 
-  // Función para alternar si un participante está excluido o no del pago, lo que afecta su inclusión en el cálculo de subtotal, propina y total a pagar.
-  function toggleExcluido(id) {
+  const propina = useMemo(
+    () =>
+      propinaMonto !== null ? propinaMonto : totalConsumo * (TIP_PCT / 100),
+    [propinaMonto, totalConsumo]
+  );
+
+  const totalAPagar = useMemo(
+    () => totalConsumo + propina,
+    [totalConsumo, propina]
+  );
+
+  const propinaPorPersona = useMemo(
+    () => (activos.length > 0 ? propina / activos.length : 0),
+    [propina, activos]
+  );
+
+  const pctDelConsumo = useMemo(
+    () =>
+      totalConsumo > 0 ? ((propina / totalConsumo) * 100).toFixed(1) : 0,
+    [propina, totalConsumo]
+  );
+
+  const fmt = useCallback(
+    (val) => `${simboloMoneda}${(parseFloat(val) || 0).toFixed(2)}`,
+    [simboloMoneda]
+  );
+
+  const toggleExcluido = useCallback((id) => {
     setParticipantes((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, excluido: !p.excluido } : p)),
+      prev.map((p) => (p.id === id ? { ...p, excluido: !p.excluido } : p))
     );
-  }
+  }, []);
 
-  // Función para actualizar el consumo de un participante específico, lo que afecta el cálculo del subtotal, propina y total a pagar.
-  function actualizarConsumo(id, val) {
+  const actualizarConsumo = useCallback((id, val) => {
     setParticipantes((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, consumo: val } : p)),
+      prev.map((p) => (p.id === id ? { ...p, consumo: val } : p))
     );
-  }
+  }, []);
 
-  // Función para agregar un nuevo participante a la lista, con su nombre y consumo inicial. El nuevo participante se agrega al final de la lista y se cierra el modal de entrada.
-  function agregarParticipante() {
+  const agregarParticipante = useCallback(() => {
     if (!newNombre.trim()) return;
     setParticipantes((prev) => [
       ...prev,
@@ -159,44 +153,71 @@ export default function Calculator({ navigation, route }) {
     setNewNombre("");
     setNewConsumo("");
     setModalVisible(false);
-  }
+  }, [newNombre, newConsumo]);
 
-  // Función para formatear valores numéricos como moneda, asegurando que se muestren con dos decimales y el símbolo de dólar, lo que mejora la legibilidad de los totales y propinas en la interfaz.
-  function fmt(val) {
-    return `$${(parseFloat(val) || 0).toFixed(2)}`;
-  }
+  const handleNavigateToTip = useCallback(() => {
+    navigation.navigate("Tip", {
+      subtotal,
+      totalConsumo,
+      participantes,
+      nombreCuenta,
+    });
+  }, [navigation, subtotal, totalConsumo, participantes, nombreCuenta]);
 
-  // ── UI ────────────────────────────────────────────────────────────────────
-  // Esta es la interfaz visual de la aplicación
+  const handleCalcularDesglose = useCallback(async () => {
+    const cuenta = {
+      id: Date.now(),
+      nombre: nombreCuenta.trim() || "Cuenta Sin Nombre",
+      fecha: new Date().toISOString(),
+      personas: activos.length,
+      total: totalAPagar,
+      propina,
+      pct: propinaMonto !== null ? parseFloat(pctDelConsumo) : TIP_PCT,
+    };
+    await guardarCuenta(cuenta);
+    navigation.navigate("Desglos", {
+      participantes,
+      subtotal: totalConsumo,
+      propina,
+      totalAPagar,
+      propinaPorPersona,
+      pctDelConsumo,
+      activos,
+    });
+  }, [
+    nombreCuenta,
+    activos,
+    totalAPagar,
+    propina,
+    propinaMonto,
+    pctDelConsumo,
+    navigation,
+    participantes,
+    totalConsumo,
+    propinaPorPersona,
+  ]);
   return (
     <SafeAreaView style={styles.safe}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        {/* ======== HEADER ======== */}
-        {/* Barra superior con botón de volver y título */}
         <View style={styles.header}>
-          {/* Botón para volver a la pantalla anterior */}
           <TouchableOpacity
             onPress={() => navigation.goBack()}
             style={styles.backBtn}
           >
             <Text style={styles.backIcon}>←</Text>
           </TouchableOpacity>
-          {/* Título de la pantalla */}
           <Text style={styles.headerTitle}>Calculadora de Propina</Text>
-          {/* Espacio vacío para centrar el título */}
           <View style={{ width: 36 }} />
         </View>
 
-        {/* ======== CONTENIDO PRINCIPAL (SCROLLABLE) ======== */}
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* ── SECCIÓN 0: NOMBRE DE LA CUENTA ── */}
           <View style={styles.sectionNombre}>
             <Text style={styles.sectionLabel}>NOMBRE DE LA CUENTA</Text>
           </View>
@@ -207,141 +228,106 @@ export default function Calculator({ navigation, route }) {
                 value={nombreCuenta}
                 onChangeText={setNombreCuenta}
                 placeholder="Ej: Almuerzo con amigos"
-                placeholderTextColor={C.gray500}
+                placeholderTextColor={Colors.gray500}
               />
             </View>
           </View>
 
-          {/* ── SECCIÓN 1: PARTICIPANTES ── */}
-          {/* Muestra la lista de todas las personas en la cuenta y un botón para añadir más */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionLabel}>PARTICIPANTES</Text>
-            {/* Botón para abrir el modal de agregar nuevo participante */}
             <TouchableOpacity
               style={styles.btnAnadir}
               onPress={() => setModalVisible(true)}
               activeOpacity={0.8}
             >
               <Text style={styles.btnAnadirText}>
-                {" "}
                 <Image source={web} style={{ width: 24, height: 24 }} /> Añadir
               </Text>
             </TouchableOpacity>
           </View>
 
-          {/* CARD: Contenedor blanco que agrupa todos los participantes */}
           <View style={styles.card}>
-            {/* Iteramos sobre cada participante para mostrar su información */}
             {participantes.map((p, index) => (
               <View
                 key={p.id}
                 style={[
                   styles.participanteRow,
-                  // Agregar borde inferior a todos excepto al último
                   index < participantes.length - 1 &&
                     styles.participanteRowBorder,
                 ]}
               >
-                {/* FILA SUPERIOR: Avatar + Nombre + Input de consumo */}
                 <View style={styles.participanteTop}>
-                  {/* Lado izquierdo: Avatar y nombre */}
                   <View style={styles.participanteLeft}>
-                    {/* Avatar circular con ícono */}
                     <View style={styles.avatarCircle}>
                       <Image
                         source={profile}
                         style={{ width: 24, height: 24 }}
                       />
                     </View>
-                    {/* Nombre del participante */}
                     <Text style={styles.participanteNombre}>{p.nombre}</Text>
                   </View>
-                  {/* Lado derecho: Input del consumo ($) */}
                   <View style={styles.participanteRight}>
                     <Text style={styles.consumoPrefix}>$</Text>
-                    {/* Input para que el usuario escriba cuánto gastó */}
                     <TextInput
                       style={styles.consumoInput}
                       value={p.consumo}
-                      onChangeText={(v) => actualizarConsumo(p.id, v)} // Actualiza cuando cambia el valor
+                      onChangeText={(v) => actualizarConsumo(p.id, v)}
                       placeholder="0.00"
-                      placeholderTextColor={C.gray500}
-                      keyboardType="numeric" // Solo permite números
+                      placeholderTextColor={Colors.gray500}
+                      keyboardType="numeric"
                     />
                   </View>
                 </View>
 
-                {/* FILA INFERIOR: Opción "Excluir del pago" con switch */}
                 <View style={styles.excluirRow}>
-                  {/* Etiqueta del switch */}
                   <Text style={styles.excluirLabel}>Excluir del pago</Text>
-                  {/* Switch para activar/desactivar la exclusión del pago */}
                   <Switch
                     value={p.excluido}
-                    onValueChange={() => toggleExcluido(p.id)} // Cambia el estado cuando se toca
-                    trackColor={{ false: C.gray200, true: C.primary }} // Colores del switch
-                    thumbColor={C.white}
+                    onValueChange={() => toggleExcluido(p.id)}
+                    trackColor={{ false: Colors.gray200, true: Colors.primary }}
+                    thumbColor={Colors.white}
                   />
                 </View>
               </View>
             ))}
           </View>
 
-          {/* ── SECCIÓN 2: RESUMEN DE TOTALES ── */}
-          {/* Muestra el subtotal, propina y total a pagar */}
           <View style={styles.summaryBox}>
-            {/* Fila 1: Subtotal */}
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabelText}>Subtotal Consumo</Text>
               <Text style={styles.summaryValueText}>{fmt(subtotal)}</Text>
             </View>
-            {/* Fila 2: Propina (con borde superior e inferior) */}
             <View style={[styles.summaryRow, styles.summaryRowBorder]}>
               <Text style={styles.summaryPropLabel}>Propina ({pctDelConsumo}%)</Text>
               <Text style={styles.summaryPropValue}>+{fmt(propina)}</Text>
             </View>
-            {/* Fila 3: TOTAL A PAGAR (la más importante) */}
             <View style={styles.summaryRow}>
               <Text style={styles.summaryTotalLabel}>TOTAL A PAGAR</Text>
               <Text style={styles.summaryTotalValue}>{fmt(totalAPagar)}</Text>
             </View>
           </View>
 
-          {/* ── SECCIÓN 3: CONFIGURAR PROPINA ── */}
-          {/* Muestra información sobre cómo se distribuye la propina */}
           <TouchableOpacity
             style={styles.sectionHeader}
             activeOpacity={0.7}
-            onPress={() =>
-              navigation.navigate("Tip", { 
-                subtotal: subtotal,
-                totalConsumo: totalConsumo,
-                // Pasar también los participantes y nombre de cuenta para preservarlos
-                participantes: participantes,
-                nombreCuenta: nombreCuenta,
-              })
-            }
+            onPress={handleNavigateToTip}
           >
             <Text style={styles.sectionLabel}>CONFIGURAR PROPINA</Text>
-            <Text style={{ color: C.primary, fontSize: 13, fontWeight: "700" }}>
+            <Text style={{ color: Colors.primary, fontSize: 13, fontWeight: "700" }}>
               Editar ›
             </Text>
           </TouchableOpacity>
 
           <View style={styles.card}>
-            {/* Bloque central: Total propina a repartir */}
             <View style={styles.propinaCenterBlock}>
               <Text style={styles.propinaCenterLabel}>
                 TOTAL PROPINA A REPARTIR ($)
               </Text>
-              {/* Monto total de la propina en grande */}
               <Text style={styles.propinaCenterValue}>{fmt(propina)}</Text>
             </View>
 
-            {/* Línea divisoria */}
             <View style={styles.divider} />
 
-            {/* Propina que le toca a cada persona */}
             <View style={styles.propinaPorPersonaRow}>
               <Text style={styles.propinaPorPersonaLabel}>
                 PROPINA POR PERSONA:
@@ -351,19 +337,17 @@ export default function Calculator({ navigation, route }) {
               </Text>
             </View>
 
-            {/* Info Pill 1: Porcentaje del consumo */}
             <View style={styles.infoPill}>
               <Text style={styles.infoPillIcon}>%</Text>
               <Text style={styles.infoPillText}>
                 Equivale al{" "}
-                <Text style={{ color: C.primary, fontWeight: "700" }}>
+                <Text style={{ color: Colors.primary, fontWeight: "700" }}>
                   {pctDelConsumo}%
                 </Text>{" "}
                 del consumo de participantes activos
               </Text>
             </View>
 
-            {/* Info Pill 2: Número de participantes */}
             <View style={[styles.infoPill, { marginTop: 8 }]}>
               <Image
                 source={people}
@@ -371,7 +355,7 @@ export default function Calculator({ navigation, route }) {
               />
               <Text style={styles.infoPillText}>
                 Dividido entre{" "}
-                <Text style={{ color: C.primary, fontWeight: "700" }}>
+                <Text style={{ color: Colors.primary, fontWeight: "700" }}>
                   {activos.length}
                 </Text>{" "}
                 participante{activos.length !== 1 ? "s" : ""} activo
@@ -380,39 +364,14 @@ export default function Calculator({ navigation, route }) {
             </View>
           </View>
 
-          {/* Espacio en blanco para que el contenido no quede debajo del botón flotante */}
           <View style={{ height: 100 }} />
         </ScrollView>
 
-        {/* ======== BOTÓN FLOTANTE INFERIOR ======== */}
-        {/* Botón para calcular y ver el desglose final de la cuenta */}
         <View style={styles.bottomBar}>
           <TouchableOpacity
             style={styles.btnCalcular}
             activeOpacity={0.88}
-            // Al tocar, navega a la pantalla de desglose con todos los datos
-            onPress={async () => {
-              const cuenta = {
-                id: Date.now(),
-                nombre: nombreCuenta.trim() || "Cuenta Sin Nombre",
-                fecha: new Date().toISOString(),
-                personas: activos.length,
-                total: totalAPagar,
-                propina,
-                pct:
-                  propinaMonto !== null ? parseFloat(pctDelConsumo) : TIP_PCT,
-              };
-              await guardarCuenta(cuenta);
-              navigation.navigate("Desglos", {
-                participantes,
-                subtotal: totalConsumo,
-                propina,
-                totalAPagar,
-                propinaPorPersona,
-                pctDelConsumo,
-                activos,
-              });
-            }}
+            onPress={handleCalcularDesglose}
           >
             <View
               style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
@@ -423,8 +382,6 @@ export default function Calculator({ navigation, route }) {
           </TouchableOpacity>
         </View>
 
-        {/* ======== MODAL: AÑADIR NUEVO PARTICIPANTE ======== */}
-        {/* Diálogo que aparece cuando el usuario presiona el botón "Añadir" */}
         <Modal
           visible={modalVisible}
           transparent
@@ -434,58 +391,48 @@ export default function Calculator({ navigation, route }) {
           <View style={styles.modalOverlay}>
             <View style={styles.modalSheet}>
               <View style={styles.modalHandle} />
-              {/* Título del modal */}
               <Text style={styles.modalTitle}>Añadir Participante</Text>
 
-              {/* CAMPO 1: Nombre del participante */}
               <Text style={styles.modalLabel}>Nombre del participante</Text>
               <View style={styles.modalInputWrapper}>
-                {/* Ícono del participante */}
                 <Image source={profile} style={{ width: 24, height: 24 }} />
-                {/* Input para escribir el nombre */}
                 <TextInput
                   style={styles.modalInput}
                   value={newNombre}
                   onChangeText={setNewNombre}
                   placeholder="Ej: María García"
-                  placeholderTextColor={C.gray500}
+                  placeholderTextColor={Colors.gray500}
                 />
               </View>
 
-              {/* CAMPO 2: Consumo individual */}
               <Text style={[styles.modalLabel, { marginTop: 20 }]}>
                 Consumo individual ($)
               </Text>
               <View style={styles.modalInputWrapper}>
-                {/* Símbolo de dólar */}
                 <Text style={styles.modalInputPrefix}>$</Text>
-                {/* Input para escribir el consumo */}
                 <TextInput
                   style={styles.modalInput}
                   value={newConsumo}
                   onChangeText={setNewConsumo}
                   placeholder="0.00"
-                  placeholderTextColor={C.gray500}
+                  placeholderTextColor={Colors.gray500}
                   keyboardType="numeric"
                 />
               </View>
-              {/* Pista sobre cómo funciona si dejas el consumo vacío */}
               <Text style={styles.modalHint}>
                 Si dejas este campo vacío, el total se dividirá equitativamente.
               </Text>
 
-              {/* BOTÓN 1: Confirmar y añadir */}
               <TouchableOpacity
                 style={styles.btnConfirm}
-                onPress={agregarParticipante} // Ejecuta la función de agregar
+                onPress={agregarParticipante}
                 activeOpacity={0.88}
               >
                 <Text style={styles.btnConfirmText}>+ Añadir</Text>
               </TouchableOpacity>
 
-              {/* BOTÓN 2: Cancelar */}
               <TouchableOpacity
-                onPress={() => setModalVisible(false)} // Cierra el modal
+                onPress={() => setModalVisible(false)}
                 style={styles.btnCancelar}
                 activeOpacity={0.7}
               >
@@ -500,32 +447,29 @@ export default function Calculator({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.bgMain },
+  safe: { flex: 1, backgroundColor: Colors.bgMain },
 
-  // Header
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: C.white,
+    backgroundColor: Colors.white,
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: C.gray200,
+    borderBottomColor: Colors.gray200,
   },
   backBtn: { width: 36, alignItems: "flex-start" },
-  backIcon: { fontSize: 22, color: C.darkText },
+  backIcon: { fontSize: 22, color: Colors.darkText },
   headerTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: C.darkText,
+    color: Colors.darkText,
   },
 
-  // Scroll
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingTop: 20 },
 
-  // Section header
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -540,18 +484,17 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: 11,
     fontWeight: "800",
-    color: C.primary,
+    color: Colors.primary,
     letterSpacing: 1.2,
   },
   btnAnadir: { flexDirection: "row", alignItems: "center", gap: 4 },
   btnAnadirText: {
     fontSize: 13,
     fontWeight: "700",
-    color: C.primary,
+    color: Colors.primary,
     textAlign: "center",
   },
 
-  // Nombre de la cuenta
   nombreInputWrapper: {
     paddingHorizontal: 16,
     paddingVertical: 14,
@@ -559,13 +502,12 @@ const styles = StyleSheet.create({
   nombreInput: {
     fontSize: 15,
     fontWeight: "600",
-    color: C.darkText,
+    color: Colors.darkText,
     padding: 0,
   },
 
-  // Card
   card: {
-    backgroundColor: C.white,
+    backgroundColor: Colors.white,
     borderRadius: 16,
     marginBottom: 20,
     overflow: "hidden",
@@ -576,14 +518,13 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
 
-  // Participante
   participanteRow: {
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
   participanteRowBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: C.gray100,
+    borderBottomColor: Colors.gray100,
   },
   participanteTop: {
     flexDirection: "row",
@@ -600,7 +541,7 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: C.primaryLight,
+    backgroundColor: Colors.primaryLight,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -608,7 +549,7 @@ const styles = StyleSheet.create({
   participanteNombre: {
     fontSize: 15,
     fontWeight: "600",
-    color: C.darkText,
+    color: Colors.darkText,
   },
   participanteRight: {
     flexDirection: "row",
@@ -618,12 +559,12 @@ const styles = StyleSheet.create({
   consumoPrefix: {
     fontSize: 14,
     fontWeight: "700",
-    color: C.primary,
+    color: Colors.primary,
   },
   consumoInput: {
     fontSize: 15,
     fontWeight: "700",
-    color: C.primary,
+    color: Colors.primary,
     minWidth: 60,
     textAlign: "right",
     padding: 0,
@@ -635,12 +576,11 @@ const styles = StyleSheet.create({
   },
   excluirLabel: {
     fontSize: 13,
-    color: C.gray500,
+    color: Colors.gray500,
   },
 
-  // Summary box
   summaryBox: {
-    backgroundColor: C.primaryBg,
+    backgroundColor: Colors.primaryBg,
     borderRadius: 16,
     padding: 16,
     marginBottom: 20,
@@ -656,18 +596,17 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: "#E8C5BC",
   },
-  summaryLabelText: { fontSize: 14, color: C.darkText },
-  summaryValueText: { fontSize: 14, fontWeight: "700", color: C.darkText },
-  summaryPropLabel: { fontSize: 14, color: C.primary, fontWeight: "600" },
-  summaryPropValue: { fontSize: 14, fontWeight: "700", color: C.primary },
-  summaryTotalLabel: { fontSize: 15, fontWeight: "800", color: C.darkText },
+  summaryLabelText: { fontSize: 14, color: Colors.darkText },
+  summaryValueText: { fontSize: 14, fontWeight: "700", color: Colors.darkText },
+  summaryPropLabel: { fontSize: 14, color: Colors.primary, fontWeight: "600" },
+  summaryPropValue: { fontSize: 14, fontWeight: "700", color: Colors.primary },
+  summaryTotalLabel: { fontSize: 15, fontWeight: "800", color: Colors.darkText },
   summaryTotalValue: {
     fontSize: 22,
     fontWeight: "900",
-    color: C.primary,
+    color: Colors.primary,
   },
 
-  // Propina config card
   propinaCenterBlock: {
     alignItems: "center",
     paddingVertical: 20,
@@ -675,18 +614,18 @@ const styles = StyleSheet.create({
   propinaCenterLabel: {
     fontSize: 10,
     fontWeight: "800",
-    color: C.primary,
+    color: Colors.primary,
     letterSpacing: 1,
     marginBottom: 8,
   },
   propinaCenterValue: {
     fontSize: 36,
     fontWeight: "900",
-    color: C.primary,
+    color: Colors.primary,
   },
   divider: {
     height: 1,
-    backgroundColor: C.gray100,
+    backgroundColor: Colors.gray100,
     marginHorizontal: 16,
   },
   propinaPorPersonaRow: {
@@ -699,13 +638,13 @@ const styles = StyleSheet.create({
   propinaPorPersonaLabel: {
     fontSize: 11,
     fontWeight: "800",
-    color: C.gray500,
+    color: Colors.gray500,
     letterSpacing: 0.8,
   },
   propinaPorPersonaValue: {
     fontSize: 16,
     fontWeight: "800",
-    color: C.primary,
+    color: Colors.primary,
   },
   infoPill: {
     flexDirection: "row",
@@ -713,24 +652,23 @@ const styles = StyleSheet.create({
     gap: 8,
     marginHorizontal: 16,
     marginBottom: 8,
-    backgroundColor: C.gray100,
+    backgroundColor: Colors.gray100,
     borderRadius: 10,
     padding: 10,
   },
   infoPillIcon: {
     fontSize: 13,
-    color: C.primary,
+    color: Colors.primary,
     fontWeight: "800",
     marginTop: 1,
   },
   infoPillText: {
     fontSize: 12,
-    color: C.gray500,
+    color: Colors.gray500,
     flex: 1,
     lineHeight: 18,
   },
 
-  // Bottom bar
   bottomBar: {
     position: "absolute",
     bottom: 0,
@@ -741,11 +679,11 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(246,244,240,0.97)",
   },
   btnCalcular: {
-    backgroundColor: C.primary,
+    backgroundColor: Colors.primary,
     borderRadius: 16,
     paddingVertical: 18,
     alignItems: "center",
-    shadowColor: C.primary,
+    shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
     shadowRadius: 12,
@@ -754,18 +692,17 @@ const styles = StyleSheet.create({
   btnCalcularText: {
     fontSize: 16,
     fontWeight: "800",
-    color: C.white,
+    color: Colors.white,
     letterSpacing: 0.3,
   },
 
-  // Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",
     justifyContent: "flex-end",
   },
   modalSheet: {
-    backgroundColor: C.white,
+    backgroundColor: Colors.white,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     padding: 28,
@@ -775,59 +712,58 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 99,
-    backgroundColor: C.gray200,
+    backgroundColor: Colors.gray200,
     alignSelf: "center",
     marginBottom: 24,
   },
   modalTitle: {
     fontSize: 22,
     fontWeight: "900",
-    color: C.darkText,
+    color: Colors.darkText,
     textAlign: "center",
     marginBottom: 28,
   },
   modalLabel: {
     fontSize: 13,
     fontWeight: "600",
-    color: C.darkText,
+    color: Colors.darkText,
     marginBottom: 8,
     textAlign: "center",
   },
   modalInputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: C.gray100,
+    backgroundColor: Colors.gray100,
     borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 14,
     gap: 10,
   },
-  modalInputIcon: { fontSize: 16, color: C.gray500 },
   modalInputPrefix: {
     fontSize: 16,
     fontWeight: "700",
-    color: C.gray500,
+    color: Colors.gray500,
   },
   modalInput: {
     flex: 1,
     fontSize: 15,
     fontWeight: "600",
-    color: C.darkText,
+    color: Colors.darkText,
     padding: 0,
   },
   modalHint: {
     fontSize: 12,
-    color: C.gray500,
+    color: Colors.gray500,
     marginTop: 8,
     lineHeight: 17,
   },
   btnConfirm: {
-    backgroundColor: C.primary,
+    backgroundColor: Colors.primary,
     borderRadius: 16,
     paddingVertical: 18,
     alignItems: "center",
     marginTop: 28,
-    shadowColor: C.primary,
+    shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.3,
     shadowRadius: 12,
@@ -836,7 +772,7 @@ const styles = StyleSheet.create({
   btnConfirmText: {
     fontSize: 16,
     fontWeight: "800",
-    color: C.white,
+    color: Colors.white,
   },
   btnCancelar: {
     alignItems: "center",
@@ -846,6 +782,6 @@ const styles = StyleSheet.create({
   btnCancelarText: {
     fontSize: 15,
     fontWeight: "700",
-    color: C.primary,
+    color: Colors.primary,
   },
 });

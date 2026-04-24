@@ -1,157 +1,171 @@
-// Importamos los módulos necesarios de React Native para construir la interfaz de usuario
 import {
-  StyleSheet, // Para crear estilos
-  Text, // Para mostrar texto
-  View, // Contenedor principal
-  TouchableOpacity, // Para botones interactivos
-  SafeAreaView, // Evita que el contenido se oculte por notches
-  ScrollView, // Para contenido desplazable
-  Share, // Para compartir el resultado de la cuenta
+  StyleSheet,
+  Text,
+  View,
+  TouchableOpacity,
+  SafeAreaView,
+  ScrollView,
+  Share,
 } from "react-native";
+import { useCallback, useState, useMemo } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 
-// Paleta de colores constantes para mantener consistencia visual en toda la pantalla
-const C = {
-  primary: "#E2725B",
-  primaryLight: "#FDF0ED",
-  primaryBg: "#E2725B",
-  bgMain: "#F6F4F0",
-  white: "#FFFFFF",
-  darkText: "#1C1C1E",
-  gray500: "#8E8E93",
-  gray200: "#E5E5EA",
-  gray100: "#F2F2F7",
-  invitadoBg: "#EFEFEF",
-  invitadoText: "#8E8E93",
-};
+import {
+  obtenerRedondeo,
+  aplicarRedondeo,
+  obtenerMoneda,
+  obtenerSimboloMoneda,
+} from "../settingsStorage";
+import { Colors } from "../constants";
 
-// Función auxiliar para formatear números como moneda
-// Convierte un número a string con $ y dos decimales (ej: 45.5 -> "$45.50")
-function fmt(val) {
-  return `$${(parseFloat(val) || 0).toFixed(2)}`;
-}
-
-// ======== COMPONENTE PRINCIPAL DESGLOSSCREEN ========
-// Pantalla que muestra el desglose detallado de una cuenta con todos los participantes
-// Recibe la navegación y los parámetros con los datos de la cuenta desde CalculatorScreen
 export default function DesglosScreen({ route, navigation }) {
-  // Extraemos los datos que vienen desde la pantalla de calculadora
-  // Si no vienen datos, usamos valores por defecto (vacíos/0)
+  const [redondeoActivo, setRedondeoActivo] = useState(true);
+  const [simboloMoneda, setSimboloMoneda] = useState("$");
+
+  useFocusEffect(
+    useCallback(() => {
+      obtenerRedondeo().then(setRedondeoActivo);
+      obtenerMoneda().then((cod) => {
+        setSimboloMoneda(obtenerSimboloMoneda(cod));
+      });
+    }, [])
+  );
+
+  const fmt = useCallback(
+    (val) => `${simboloMoneda}${(parseFloat(val) || 0).toFixed(2)}`,
+    [simboloMoneda]
+  );
+
   const {
-    participantes = [], // Lista de personas que son parte de la cuenta
-    subtotal = 0, // Total de consumo de activos (sin propina)
-    propina = 0, // Monto total de propina (ingresado manualmente o calculado)
-    totalAPagar = 0, // Monto final a pagar (subtotal + propina)
-    propinaPorPersona = 0, // Propina dividida entre activos
-    pctDelConsumo = 10, // Porcentaje real de la propina sobre el consumo de activos
+    participantes = [],
+    subtotal = 0,
+    propina = 0,
+    totalAPagar = 0,
+    propinaPorPersona = 0,
+    pctDelConsumo = 10,
   } = route?.params || {};
 
-  // ======== LÓGICA DE CÁLCULOS ========
-  // Filtramos solo los participantes NO excluidos (que sí pagan)
-  const activos = participantes.filter((p) => !p.excluido);
-  
-  // Calculamos el total de consumo de los participantes EXCLUIDOS (invitados)
-  // Estos participantes no pagan pero sus consumos se reparten entre los activos
-  const totalExcluidos = participantes
-    .filter((p) => p.excluido) // Solo los excluidos
-    .reduce((s, p) => s + (parseFloat(p.consumo) || 0), 0); // Suma de consumos
-  
-  // Consumo de excluidos repartido entre los participantes activos
-  const consumoExcluidosPorActivo =
-    activos.length > 0 ? totalExcluidos / activos.length : 0;
+  const activos = useMemo(
+    () => participantes.filter((p) => !p.excluido),
+    [participantes]
+  );
 
-  // Función para calcular el TOTAL que debe pagar un participante
-  // Si es un excluido (invitado), paga 0 (sus gastos se cubren)
-  // Si es activo, paga: su consumo + su parte del consumo de excluidos + propina por persona
-  function totalParticipante(p) {
-    if (p.excluido) return 0; // Los invitados no pagan nada
-    const consumo = parseFloat(p.consumo) || 0; // Su consumo individual
-    // Total = consumo del participante + su parte de consumo de excluidos + propina por persona
-    return consumo + consumoExcluidosPorActivo + propinaPorPersona;
-  }
+  const totalExcluidos = useMemo(
+    () =>
+      participantes
+        .filter((p) => p.excluido)
+        .reduce((s, p) => s + (parseFloat(p.consumo) || 0), 0),
+    [participantes]
+  );
 
-  // Función para calcular sólo la PROPINA que paga un participante
-  // Es simplemente la propina dividida entre activos
-  function propinaParticipante(p) {
-    return p.excluido ? 0 : propinaPorPersona;
-  }
+  const consumoExcluidosPorActivo = useMemo(
+    () => (activos.length > 0 ? totalExcluidos / activos.length : 0),
+    [totalExcluidos, activos]
+  );
 
-  // Función para compartir el resultado de la cuenta
-  // Usa la API Share de React Native para enviar por WhatsApp, email, etc.
-  async function handleCompartir() {
-    // Creamos un array de strings con cada participante y su total
+  const propinaRedondeada = useMemo(
+    () => aplicarRedondeo(propina, redondeoActivo),
+    [propina, redondeoActivo]
+  );
+
+  const propinaPorPersonaRedondeada = useMemo(
+    () => aplicarRedondeo(propinaPorPersona, redondeoActivo),
+    [propinaPorPersona, redondeoActivo]
+  );
+
+  const subtotalRedondeado = useMemo(
+    () => aplicarRedondeo(subtotal, redondeoActivo),
+    [subtotal, redondeoActivo]
+  );
+
+  const totalAPagarRedondeado = useMemo(
+    () => aplicarRedondeo(totalAPagar, redondeoActivo),
+    [totalAPagar, redondeoActivo]
+  );
+
+  const totalParticipante = useCallback(
+    (p) => {
+      if (p.excluido) return 0;
+      const consumo = parseFloat(p.consumo) ||  0;
+      return aplicarRedondeo(
+        consumo +
+          consumoExcluidosPorActivo +
+          propinaPorPersonaRedondeada,
+        redondeoActivo
+      );
+    },
+    [consumoExcluidosPorActivo, propinaPorPersonaRedondeada, redondeoActivo]
+  );
+
+  const propinaParticipante = useCallback(
+    (p) => (p.excluido ? 0 : propinaPorPersonaRedondeada),
+    [propinaPorPersonaRedondeada]
+  );
+
+  const handleCompartir = useCallback(async () => {
     const lines = participantes.map((p) => {
-      if (p.excluido) return `${p.nombre} (Invitado): $0.00`; // Invitados muestran $0
-      return `${p.nombre}: ${fmt(totalParticipante(p))}`; // Activos muestran su total
+      if (p.excluido) return `${p.nombre} (Invitado): $0.00`;
+      return `${p.nombre}: ${fmt(totalParticipante(p))}`;
     });
-    
-    // Armamos el mensaje con un formato legible y atractivo
+
     const texto =
-      `🧾 Desglose de cuenta - PropinaPlus\n\n` + // Encabezado
-      lines.join("\n") + // Lista de participantes
-      `\n\nSubtotal: ${fmt(subtotal)}\nPropina (${pctDelConsumo}%): ${fmt(propina)}\nTOTAL: ${fmt(totalAPagar)}`; // Resumen final con porcentaje real
-    
-    // Abrimos el diálogo de compartir del dispositivo
+      `🧾 Desglose de cuenta - PropinaPlus\n\n` +
+      lines.join("\n") +
+      `\n\nSubtotal: ${fmt(subtotalRedondeado)}\nPropina (${pctDelConsumo}%): ${fmt(
+        propinaRedondeada
+      )}\nTOTAL: ${fmt(totalAPagarRedondeado)}`;
+
     await Share.share({ message: texto });
-  }
+  }, [participantes, fmt, totalParticipante, subtotalRedondeado, pctDelConsumo, propinaRedondeada, totalAPagarRedondeado]);
 
   return (
     <SafeAreaView style={styles.safe}>
-      {/* ======== HEADER ======== */}
       <View style={styles.header}>
-        {/* Botón para volver atrás */}
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+        >
           <Text style={styles.backIcon}>←</Text>
         </TouchableOpacity>
-        {/* Título de la pantalla */}
         <Text style={styles.headerTitle}>Desglose</Text>
-        {/* Espacio vacío para centrar el título */}
         <View style={{ width: 36 }} />
       </View>
 
-      {/* ======== CONTENIDO PRINCIPAL (SCROLLABLE) ======== */}
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false} // Oculta barra de scroll
+        showsVerticalScrollIndicator={false}
       >
-        {/* TÍTULO: PARTICIPANTES */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionLabel}>PARTICIPANTES</Text>
-          {/* Badge que muestra cuántas personas están en la cuenta */}
           <View style={styles.personasBadge}>
             <Text style={styles.personasBadgeText}>
-              {participantes.length} Persona{participantes.length !== 1 ? "s" : ""}
+              {participantes.length} Persona
+              {participantes.length !== 1 ? "s" : ""}
             </Text>
           </View>
         </View>
 
-        {/* LISTADO DE PARTICIPANTES - Mostramos cada persona con su desglose */}
         {participantes.map((p) => {
-          // Determinamos si es un invitado (excluido)
           const esInvitado = p.excluido;
           return (
             <View
               key={p.id}
               style={[
                 styles.personaCard,
-                // Si es invitado, usamos estilos diferentes (fondo gris, borde punteado)
-                esInvitado && styles.personaCardInvitado
+                esInvitado && styles.personaCardInvitado,
               ]}
             >
-              {/* PARTE SUPERIOR: Nombre + Total a pagar */}
               <View style={styles.personaTop}>
-                {/* Nombre de la persona */}
                 <View style={styles.personaNombreRow}>
                   <Text
                     style={[
                       styles.personaNombre,
-                      // Si es invitado, su nombre se muestra en gris
                       esInvitado && styles.personaNombreInvitado,
                     ]}
                   >
                     {p.nombre}
                   </Text>
-                  {/* Badge "INVITADO" solo para excluidos */}
                   {esInvitado && (
                     <View style={styles.invitadoBadge}>
                       <Text style={styles.invitadoBadgeText}>INVITADO</Text>
@@ -159,11 +173,9 @@ export default function DesglosScreen({ route, navigation }) {
                   )}
                 </View>
 
-                {/* TOTAL QUE PAGA ESTA PERSONA */}
                 <Text
                   style={[
                     styles.personaTotal,
-                    // Si es invitado, el total se muestra en gris
                     esInvitado && styles.personaTotalInvitado,
                   ]}
                 >
@@ -171,12 +183,11 @@ export default function DesglosScreen({ route, navigation }) {
                 </Text>
               </View>
 
-              {/* PARTE INFERIOR: Detalle del desglose (consumo + propina) */}
               {esInvitado ? (
-                // Para invitados: mostrar mensaje explicativo
-                <Text style={styles.invitadoSub}>Consumo cubierto por el grupo</Text>
+                <Text style={styles.invitadoSub}>
+                  Consumo cubierto por el grupo
+                </Text>
               ) : (
-                // Para participantes activos: mostrar consumo y propina
                 <View style={styles.personaDetalle}>
                   <Text style={styles.personaConsumo}>
                     Consumo: {fmt(parseFloat(p.consumo) || 0)}
@@ -190,45 +201,38 @@ export default function DesglosScreen({ route, navigation }) {
           );
         })}
 
-        {/* TARJETA FINAL: Resumen de la cuenta completa */}
         <View style={styles.totalCard}>
-          {/* Marca de agua decorativa de fondo */}
           <Text style={styles.totalCardWatermark}>$</Text>
 
-          {/* Título */}
           <Text style={styles.totalCardLabel}>TOTAL FINAL DE LA CUENTA</Text>
-          
-          {/* Monto total con descripción */}
+
           <View style={styles.totalCardAmountRow}>
-            <Text style={styles.totalCardAmount}>{fmt(totalAPagar)}</Text>
+            <Text style={styles.totalCardAmount}>
+              {fmt(totalAPagarRedondeado)}
+            </Text>
             <Text style={styles.totalCardSub}> (Incluye propina total)</Text>
           </View>
 
-          {/* Línea divisoria */}
           <View style={styles.totalCardDivider} />
 
-          {/* PIE: Desglose del cálculo (subtotal + propina individual) */}
           <View style={styles.totalCardFooter}>
             <Text style={styles.totalCardFooterText}>
-              Subtotal: {fmt(subtotal)}
+              Subtotal: {fmt(subtotalRedondeado)}
             </Text>
             <Text style={styles.totalCardFooterText}>
-              Propina ({pctDelConsumo}%): {fmt(propina)}
+              Propina ({pctDelConsumo}%): {fmt(propinaRedondeada)}
             </Text>
           </View>
         </View>
 
-        {/* Espacio en blanco para que el contenido no quede debajo del botón */}
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* ======== BOTÓN FLOTANTE INFERIOR ======== */}
       <View style={styles.bottomBar}>
-        {/* Botón para compartir el resultado de la cuenta */}
         <TouchableOpacity
           style={styles.btnCompartir}
-          onPress={handleCompartir} // Activa la función de compartir
-          activeOpacity={0.88} // Efecto visual al presionar
+          onPress={handleCompartir}
+          activeOpacity={0.88}
         >
           <Text style={styles.btnCompartirIcon}>⇪</Text>
           <Text style={styles.btnCompartirText}>Compartir Resultado</Text>
@@ -239,32 +243,29 @@ export default function DesglosScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.bgMain },
+  safe: { flex: 1, backgroundColor: Colors.bgMain },
 
-  // Header
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: C.white,
+    backgroundColor: Colors.white,
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: C.gray200,
+    borderBottomColor: Colors.gray200,
   },
   backBtn: { width: 36 },
-  backIcon: { fontSize: 22, color: C.darkText },
+  backIcon: { fontSize: 22, color: Colors.darkText },
   headerTitle: {
     fontSize: 18,
     fontWeight: "800",
-    color: C.darkText,
+    color: Colors.darkText,
   },
 
-  // Scroll
   scroll: { flex: 1 },
   scrollContent: { padding: 16, paddingTop: 20 },
 
-  // Section header
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -274,11 +275,11 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: 11,
     fontWeight: "800",
-    color: C.gray500,
+    color: Colors.gray500,
     letterSpacing: 1.5,
   },
   personasBadge: {
-    backgroundColor: C.primaryLight,
+    backgroundColor: Colors.primaryLight,
     borderRadius: 99,
     paddingHorizontal: 12,
     paddingVertical: 5,
@@ -286,12 +287,11 @@ const styles = StyleSheet.create({
   personasBadgeText: {
     fontSize: 12,
     fontWeight: "700",
-    color: C.primary,
+    color: Colors.primary,
   },
 
-  // Persona card
   personaCard: {
-    backgroundColor: C.white,
+    backgroundColor: Colors.white,
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
@@ -302,9 +302,9 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   personaCardInvitado: {
-    backgroundColor: C.gray100,
+    backgroundColor: Colors.gray100,
     borderWidth: 1.5,
-    borderColor: C.gray200,
+    borderColor: Colors.gray200,
     borderStyle: "dashed",
     shadowOpacity: 0,
     elevation: 0,
@@ -324,13 +324,13 @@ const styles = StyleSheet.create({
   personaNombre: {
     fontSize: 17,
     fontWeight: "800",
-    color: C.darkText,
+    color: Colors.darkText,
   },
   personaNombreInvitado: {
-    color: C.gray500,
+    color: Colors.gray500,
   },
   invitadoBadge: {
-    backgroundColor: C.invitadoBg,
+    backgroundColor: "#EFEFEF",
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -338,16 +338,16 @@ const styles = StyleSheet.create({
   invitadoBadgeText: {
     fontSize: 10,
     fontWeight: "800",
-    color: C.gray500,
+    color: Colors.gray500,
     letterSpacing: 0.5,
   },
   personaTotal: {
     fontSize: 20,
     fontWeight: "900",
-    color: C.primary,
+    color: Colors.primary,
   },
   personaTotalInvitado: {
-    color: C.gray500,
+    color: Colors.gray500,
   },
   personaDetalle: {
     flexDirection: "row",
@@ -356,27 +356,26 @@ const styles = StyleSheet.create({
   },
   personaConsumo: {
     fontSize: 13,
-    color: C.gray500,
+    color: Colors.gray500,
   },
   personaPropina: {
     fontSize: 13,
     fontWeight: "600",
-    color: C.primary,
+    color: Colors.primary,
   },
   invitadoSub: {
     fontSize: 13,
-    color: C.gray500,
+    color: Colors.gray500,
     fontStyle: "italic",
   },
 
-  // Total card
   totalCard: {
-    backgroundColor: C.primary,
+    backgroundColor: Colors.primary,
     borderRadius: 20,
     padding: 24,
     marginTop: 8,
     overflow: "hidden",
-    shadowColor: C.primary,
+    shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.4,
     shadowRadius: 16,
@@ -406,7 +405,7 @@ const styles = StyleSheet.create({
   totalCardAmount: {
     fontSize: 48,
     fontWeight: "900",
-    color: C.white,
+    color: Colors.white,
     lineHeight: 54,
   },
   totalCardSub: {
@@ -430,7 +429,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  // Bottom bar
   bottomBar: {
     position: "absolute",
     bottom: 0,
@@ -441,14 +439,14 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(246,244,240,0.97)",
   },
   btnCompartir: {
-    backgroundColor: C.primary,
+    backgroundColor: Colors.primary,
     borderRadius: 16,
     paddingVertical: 18,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
-    shadowColor: C.primary,
+    shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
     shadowRadius: 12,
@@ -456,13 +454,13 @@ const styles = StyleSheet.create({
   },
   btnCompartirIcon: {
     fontSize: 18,
-    color: C.white,
+    color: Colors.white,
     fontWeight: "800",
   },
   btnCompartirText: {
     fontSize: 16,
     fontWeight: "800",
-    color: C.white,
+    color: Colors.white,
     letterSpacing: 0.3,
   },
 });

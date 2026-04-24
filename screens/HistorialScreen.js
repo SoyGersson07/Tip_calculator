@@ -1,209 +1,154 @@
-// Importamos hooks de React:
-// useState → para manejar estados
-// useCallback → para optimizar funciones y evitar renders innecesarios
-import { useState, useCallback } from "react";
-
-// Importamos componentes de React Native para construir la interfaz
+import { useState, useCallback, useMemo } from "react";
 import {
-  StyleSheet, Text, View, TouchableOpacity,
-  SafeAreaView, ScrollView, Image, Alert,
+  StyleSheet,
+  Text,
+  View,
+  TouchableOpacity,
+  SafeAreaView,
+  ScrollView,
+  Image,
 } from "react-native";
-
-// Hook de navegación que permite ejecutar código cuando la pantalla entra en foco
 import { useFocusEffect } from "@react-navigation/native";
 
-// Función para obtener el historial guardado
-import { obtenerHistorial, eliminarCuenta, limpiarHistorial } from "../historialStorage";
+import { obtenerHistorial } from "../historialStorage";
+import { obtenerMoneda, obtenerSimboloMoneda } from "../settingsStorage";
+import { Colors } from "../constants";
 
-// Importamos imágenes que se usan en la UI
 import commerce from "../assets/commerce.png";
-import charity from "../assets/charity.png";
 
-// Constante de colores para mantener consistencia visual
-const C = {
-  primary: "#E2725B",
-  primaryLight: "#FDF0ED",
-  bgMain: "#F6F4F0",
-  white: "#FFFFFF",
-  darkText: "#1C1C1E",
-  gray500: "#8E8E93",
-  gray200: "#E5E5EA",
-  gray100: "#F2F2F7",
-};
-
-// Tabs disponibles en la parte superior
 const TABS = ["Recientes", "Este Mes"];
 
-
-// ======== FUNCIÓN: AGRUPAR HISTORIAL POR DÍA ========
-// Organiza las cuentas en grupos como HOY, AYER o por fecha
 function agruparPorDia(historial) {
-
-  const hoy = new Date();     // Fecha actual
-  const ayer = new Date();    // Fecha de ayer
+  const hoy = new Date();
+  const ayer = new Date();
   ayer.setDate(ayer.getDate() - 1);
 
-  // Función para comparar fechas en formato simple
   const fmt = (d) => d.toDateString();
+  const grupos = {};
 
-  const grupos = {}; // Objeto donde se almacenarán los grupos
-
-  // Recorremos cada elemento del historial
   historial.forEach((item) => {
     const fecha = new Date(item.fecha);
     let grupo;
 
-    // Clasificamos según el día
     if (fmt(fecha) === fmt(hoy)) grupo = "HOY";
     else if (fmt(fecha) === fmt(ayer)) grupo = "AYER";
     else {
-      // Si no es hoy ni ayer, mostramos fecha normal (ej: 5 abril)
       grupo = fecha.toLocaleDateString("es-ES", {
         day: "numeric",
-        month: "long"
+        month: "long",
       });
     }
 
-    // Si el grupo no existe, lo creamos
     if (!grupos[grupo]) grupos[grupo] = [];
-
-    // Agregamos el item al grupo correspondiente
     grupos[grupo].push(item);
   });
 
   return grupos;
 }
 
-
-// ======== FUNCIÓN: FORMATEAR HORA ========
-// Convierte fecha ISO a formato de hora (ej: 14:30)
 function fmtHora(iso) {
   return new Date(iso).toLocaleTimeString("es-ES", {
     hour: "2-digit",
-    minute: "2-digit"
+    minute: "2-digit",
   });
 }
 
-
-// ======== COMPONENTE PRINCIPAL ========
 export default function HistorialScreen() {
-
-  // Estado para saber qué tab está activa
   const [tabActiva, setTabActiva] = useState("Recientes");
-
-  // Estado que guarda el historial de cuentas
   const [historial, setHistorial] = useState([]);
-
-  // Estado que guarda el ID de la cuenta expandida
   const [cuentaExpandida, setCuentaExpandida] = useState(null);
+  const [simboloMoneda, setSimboloMoneda] = useState("$");
 
-  // ======== EFECTO CUANDO LA PANTALLA SE ABRE ========
-  // Se ejecuta cada vez que el usuario entra a esta pantalla
   useFocusEffect(
     useCallback(() => {
-      // Cargamos el historial desde almacenamiento
       obtenerHistorial().then(setHistorial);
+      obtenerMoneda().then((cod) => {
+        setSimboloMoneda(obtenerSimboloMoneda(cod));
+      });
     }, [])
   );
 
-  // ======== FUNCIONES ========
-  
-  const ahora = new Date();
-  const treintaDiasAtras = new Date(ahora.getTime() - 30 * 24 * 60 * 60 * 1000);
-  const inicioDelMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+  const fmt = useCallback(
+    (val) => `${simboloMoneda}${(parseFloat(val) || 0).toFixed(2)}`,
+    [simboloMoneda]
+  );
 
-  let historialFiltrado;
+  const ahora = useMemo(() => new Date(), []);
+  const treintaDiasAtras = useMemo(
+    () => new Date(ahora.getTime() - 30 * 24 * 60 * 60 * 1000),
+    [ahora]
+  );
+  const inicioDelMes = useMemo(
+    () => new Date(ahora.getFullYear(), ahora.getMonth(), 1),
+    [ahora]
+  );
 
-  if (tabActiva === "Este Mes") {
-    historialFiltrado = historial.filter((item) => {
-      const fecha = new Date(item.fecha);
-      return fecha >= inicioDelMes;
-    });
-  } else {
-    // "Recientes" (últimos 30 días)
-    historialFiltrado = historial.filter((item) => {
+  const historialFiltrado = useMemo(() => {
+    if (tabActiva === "Este Mes") {
+      return historial.filter((item) => {
+        const fecha = new Date(item.fecha);
+        return fecha >= inicioDelMes;
+      });
+    }
+    return historial.filter((item) => {
       const fecha = new Date(item.fecha);
       return fecha >= treintaDiasAtras;
     });
-  }
+  }, [tabActiva, historial, inicioDelMes, treintaDiasAtras]);
 
-  // Agrupar el historial filtrado por día
-  const grupos = agruparPorDia(historialFiltrado);
+  const grupos = useMemo(
+    () => agruparPorDia(historialFiltrado),
+    [historialFiltrado]
+  );
 
-  // Función para alternar expansión de una cuenta
-  function toggleExpandir(id) {
-    setCuentaExpandida(cuentaExpandida === id ? null : id);
-  }
+  const toggleExpandir = useCallback((id) => {
+    setCuentaExpandida((prev) => (prev === id ? null : id));
+  }, []);
 
-
-  // ======== UI ========
   return (
     <SafeAreaView style={s.safe}>
-
-      {/* ======== HEADER ======== */}
       <View style={s.header}>
-        
-        {/* Espacio vacío para centrar el título */}
         <View style={{ width: 36 }} />
-
-        {/* Título */}
         <Text style={s.headerTitle}>Historial de Cuentas</Text>
-
-        {/* Espacio vacío derecho */}
         <View style={{ width: 36 }} />
       </View>
 
-
-      {/* ======== TABS ======== */}
       <View style={s.tabsRow}>
         {TABS.map((t) => (
           <TouchableOpacity
             key={t}
-            onPress={() => setTabActiva(t)} // Cambia la tab activa
+            onPress={() => setTabActiva(t)}
             style={s.tabBtn}
           >
-            {/* Texto del tab */}
-            <Text style={[
-              s.tabText,
-              tabActiva === t && s.tabTextActivo // Se resalta si está activa
-            ]}>
+            <Text
+              style={[
+                s.tabText,
+                tabActiva === t && s.tabTextActivo,
+              ]}
+            >
               {t}
             </Text>
-
-            {/* Línea inferior si está activa */}
             {tabActiva === t && <View style={s.tabUnderline} />}
           </TouchableOpacity>
         ))}
       </View>
 
-
-      {/* ======== CONTENIDO SCROLL ======== */}
       <ScrollView
         style={s.scroll}
         contentContainerStyle={s.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-
-        {/* ======== ESTADO VACÍO ======== */}
-        {/* Se muestra si no hay historial */}
         {historial.length === 0 ? (
           <View style={s.emptyState}>
             <Text style={s.emptyIcon}>🧾</Text>
             <Text style={s.emptyTitle}>Sin cuentas aún</Text>
             <Text style={s.emptySub}>Tus cálculos aparecerán aquí</Text>
           </View>
-
         ) : (
-
-          // ======== LISTA AGRUPADA ========
           Object.entries(grupos).map(([grupo, items]) => (
-
             <View key={grupo}>
-
-              {/* Nombre del grupo (HOY, AYER, etc) */}
               <Text style={s.grupoLabel}>{grupo}</Text>
 
-              {/* Renderizamos cada item dentro del grupo */}
               {items.map((item) => (
                 <View key={item.id}>
                   <TouchableOpacity
@@ -211,106 +156,103 @@ export default function HistorialScreen() {
                       s.card,
                       cuentaExpandida === item.id && s.cardExpanded,
                     ]}
-                    onPress={() => {
-                      toggleExpandir(item.id);
-                    }}
+                    onPress={() => toggleExpandir(item.id)}
                     activeOpacity={0.7}
                   >
-                    {/* Ícono */}
                     <View style={s.iconWrap}>
-                      <Image source={commerce} style={{ width: 22, height: 22 }} />
+                      <Image
+                        source={commerce}
+                        style={{ width: 22, height: 22 }}
+                      />
                     </View>
 
-                    {/* Información principal */}
                     <View style={s.cardInfo}>
-                      
-                      {/* Nombre de la cuenta */}
                       <Text style={s.cardNombre}>{item.nombre}</Text>
-
-                      {/* Meta: personas + hora */}
                       <Text style={s.cardMeta}>
-                        {item.personas} persona{item.personas !== 1 ? "s" : ""}  ·  {fmtHora(item.fecha)}
+                        {item.personas} persona{item.personas !== 1 ? "s" : ""}  
+                        ·  {fmtHora(item.fecha)}
                       </Text>
-
-                      {/* Propina */}
                       <Text style={s.cardPropina}>
-                        Propina: ${item.propina.toFixed(2)} ({item.pct}%)
+                        Propina: {fmt(item.propina)} ({item.pct}%)
                       </Text>
                     </View>
 
-                    {/* Parte derecha */}
                     <View style={s.cardRight}>
-                      
-                      {/* Total */}
-                      <Text style={s.cardTotal}>
-                        ${item.total.toFixed(2)}
+                      <Text style={s.cardTotal}>{fmt(item.total)}</Text>
+                      <Text
+                        style={[
+                          s.cardChevron,
+                          cuentaExpandida === item.id &&
+                            s.cardChevronRotated,
+                        ]}
+                      >
+                        ›
                       </Text>
-
-                      {/* Flecha */}
-                      <Text style={[
-                        s.cardChevron,
-                        cuentaExpandida === item.id && s.cardChevronRotated
-                      ]}>›</Text>
                     </View>
                   </TouchableOpacity>
 
-                  {/* PANEL EXPANDIDO CON INFORMACIÓN COMPLETA */}
                   {cuentaExpandida === item.id && (
                     <View style={s.cardExpandedContent}>
-                      {/* Divider */}
                       <View style={s.divider} />
-
-                      {/* Fila: Monto Original */}
                       <View style={s.detailRow}>
                         <Text style={s.detailLabel}>Monto Original:</Text>
-                        <Text style={s.detailValue}>${(item.total - item.propina).toFixed(2)}</Text>
+                        <Text style={s.detailValue}>
+                          {fmt(item.total - item.propina)}
+                        </Text>
                       </View>
-
-                      {/* Fila: Porcentaje */}
                       <View style={s.detailRow}>
-                        <Text style={s.detailLabel}>Porcentaje Propina:</Text>
+                        <Text style={s.detailLabel}>
+                          Porcentaje Propina:
+                        </Text>
                         <Text style={s.detailValue}>{item.pct}%</Text>
                       </View>
-
-                      {/* Fila: Propina */}
                       <View style={s.detailRow}>
                         <Text style={s.detailLabel}>Propina:</Text>
-                        <Text style={[s.detailValue, s.detailValueHighlight]}>
-                          ${item.propina.toFixed(2)}
+                        <Text
+                          style={[
+                            s.detailValue,
+                            s.detailValueHighlight,
+                          ]}
+                        >
+                          {fmt(item.propina)}
                         </Text>
                       </View>
-
-                      {/* Divider */}
                       <View style={s.divider} />
-
-                      {/* Fila: Total con personas */}
                       <View style={s.detailRow}>
-                        <Text style={s.detailLabel}>Total ({item.personas} {item.personas === 1 ? "persona" : "personas"}):</Text>
+                        <Text style={s.detailLabel}>
+                          Total ({item.personas}{" "}
+                          {item.personas === 1 ? "persona" : "personas"}
+                          ):
+                        </Text>
                         <Text style={s.detailTotal}>
-                          ${item.total.toFixed(2)}
+                          {fmt(item.total)}
                         </Text>
                       </View>
-
-                      {/* Fila: Por persona */}
                       <View style={s.detailRow}>
                         <Text style={s.detailLabel}>Por persona:</Text>
-                        <Text style={[s.detailValue, s.detailValueHighlight]}>
-                          ${(item.total / item.personas).toFixed(2)}
+                        <Text
+                          style={[
+                            s.detailValue,
+                            s.detailValueHighlight,
+                          ]}
+                        >
+                          {fmt(item.total / item.personas)}
                         </Text>
                       </View>
-
-                      {/* Fila: Fecha */}
                       <View style={s.detailRow}>
                         <Text style={s.detailLabel}>Fecha:</Text>
                         <Text style={s.detailValue}>
-                          {new Date(item.fecha).toLocaleDateString("es-ES", {
-                            weekday: "short",
-                            year: "numeric",
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit"
-                          })}
+                          {new Date(item.fecha).toLocaleDateString(
+                            "es-ES",
+                            {
+                              weekday: "short",
+                              year: "numeric",
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            }
+                          )}
                         </Text>
                       </View>
                     </View>
@@ -321,58 +263,38 @@ export default function HistorialScreen() {
           ))
         )}
 
-        {/* Footer */}
-        <Text style={s.footer}>
-          Se muestran los últimos 30 días
-        </Text>
-
+        <Text style={s.footer}>Se muestran los últimos 30 días</Text>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-
-// ======== ESTILOS ========
 const s = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: Colors.bgMain },
 
-  // Contenedor principal
-  safe: { flex: 1, backgroundColor: C.bgMain },
-
-  // Header
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: C.white,
+    backgroundColor: Colors.white,
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: C.gray200,
+    borderBottomColor: Colors.gray200,
   },
 
   headerTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: C.darkText,
+    color: Colors.darkText,
   },
 
-  filterBtn: {
-    width: 36,
-    alignItems: "flex-end",
-  },
-
-  filterIcon: {
-    fontSize: 18,
-    color: C.gray500,
-  },
-
-  // Tabs
   tabsRow: {
     flexDirection: "row",
-    backgroundColor: C.white,
+    backgroundColor: Colors.white,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: C.gray200,
+    borderBottomColor: Colors.gray200,
   },
 
   tabBtn: {
@@ -384,11 +306,11 @@ const s = StyleSheet.create({
   tabText: {
     fontSize: 14,
     fontWeight: "600",
-    color: C.gray500,
+    color: Colors.gray500,
   },
 
   tabTextActivo: {
-    color: C.primary,
+    color: Colors.primary,
   },
 
   tabUnderline: {
@@ -397,11 +319,10 @@ const s = StyleSheet.create({
     left: 0,
     right: 0,
     height: 2,
-    backgroundColor: C.primary,
+    backgroundColor: Colors.primary,
     borderRadius: 99,
   },
 
-  // Scroll
   scroll: { flex: 1 },
 
   scrollContent: {
@@ -409,19 +330,17 @@ const s = StyleSheet.create({
     paddingBottom: 40,
   },
 
-  // Grupo
   grupoLabel: {
     fontSize: 11,
     fontWeight: "800",
-    color: C.gray500,
+    color: Colors.gray500,
     letterSpacing: 1.2,
     marginTop: 16,
     marginBottom: 8,
   },
 
-  // Card
   card: {
-    backgroundColor: C.white,
+    backgroundColor: Colors.white,
     borderRadius: 16,
     padding: 14,
     flexDirection: "row",
@@ -438,7 +357,7 @@ const s = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 12,
-    backgroundColor: C.primaryLight,
+    backgroundColor: Colors.primaryLight,
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
@@ -449,20 +368,20 @@ const s = StyleSheet.create({
   cardNombre: {
     fontSize: 15,
     fontWeight: "700",
-    color: C.darkText,
+    color: Colors.darkText,
     marginBottom: 2,
   },
 
   cardMeta: {
     fontSize: 12,
-    color: C.gray500,
+    color: Colors.gray500,
     marginBottom: 2,
   },
 
   cardPropina: {
     fontSize: 12,
     fontWeight: "600",
-    color: C.primary,
+    color: Colors.primary,
   },
 
   cardRight: {
@@ -473,12 +392,12 @@ const s = StyleSheet.create({
   cardTotal: {
     fontSize: 16,
     fontWeight: "800",
-    color: C.darkText,
+    color: Colors.darkText,
   },
 
   cardChevron: {
     fontSize: 18,
-    color: C.gray200,
+    color: Colors.gray200,
   },
 
   cardChevronRotated: {
@@ -490,9 +409,8 @@ const s = StyleSheet.create({
     borderBottomRightRadius: 0,
   },
 
-  // Panel expandido
   cardExpandedContent: {
-    backgroundColor: C.white,
+    backgroundColor: Colors.white,
     borderBottomLeftRadius: 16,
     borderBottomRightRadius: 16,
     paddingHorizontal: 16,
@@ -507,7 +425,7 @@ const s = StyleSheet.create({
 
   divider: {
     height: 1,
-    backgroundColor: C.gray100,
+    backgroundColor: Colors.gray100,
     marginVertical: 12,
   },
 
@@ -520,49 +438,31 @@ const s = StyleSheet.create({
 
   detailLabel: {
     fontSize: 13,
-    color: C.gray500,
+    color: Colors.gray500,
     fontWeight: "500",
   },
 
   detailValue: {
     fontSize: 13,
-    color: C.darkText,
+    color: Colors.darkText,
     fontWeight: "600",
   },
 
   detailValueHighlight: {
-    color: C.primary,
+    color: Colors.primary,
     fontWeight: "700",
   },
 
   detailTotal: {
     fontSize: 14,
-    color: C.darkText,
+    color: Colors.darkText,
     fontWeight: "800",
   },
 
-  // Botón de eliminar individual
-  deleteBtn: {
-    marginTop: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    backgroundColor: "#FFE5E0",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  deleteBtnText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#FF3B30",
-  },
-
-  // Estado vacío
   emptyState: {
     alignItems: "center",
     paddingVertical: 60,
-    backgroundColor: C.white,
+    backgroundColor: Colors.white,
     borderRadius: 18,
     marginTop: 20,
   },
@@ -575,22 +475,19 @@ const s = StyleSheet.create({
   emptyTitle: {
     fontSize: 16,
     fontWeight: "800",
-    color: C.darkText,
+    color: Colors.darkText,
     marginBottom: 6,
   },
 
   emptySub: {
     fontSize: 13,
-    color: C.gray500,
+    color: Colors.gray500,
   },
 
-  // Footer
   footer: {
     textAlign: "center",
     fontSize: 12,
-    color: C.gray500,
+    color: Colors.gray500,
     marginTop: 24,
   },
-
-  // Checkbox (modo edición)
 });
