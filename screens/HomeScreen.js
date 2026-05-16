@@ -10,81 +10,92 @@ import {
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 
-import { obtenerHistorial } from "../historialStorage";
-import { obtenerMoneda, obtenerSimboloMoneda } from "../settingsStorage";
-import { Colors } from "../constants";
+import { obtenerHistorial } from "../storage/historialStorage";
+import { getAllTranslations } from "../config/languages";
+import { obtenerMoneda, obtenerSimboloMoneda } from "../storage/settingsStorage";
+import { Colors, getColors } from "../config/constants";
+import { useAppContext } from "../context/AppContext";
 
 import commerce from "../assets/commerce.png";
 import charity from "../assets/charity.png";
+import file from "../assets/file.png";
+import roulette from "../assets/roulette.png";
 
-function HistorialItem({ item, isExpanded, onToggle, fmt }) {
+/*
+ * HOME_SCREEN.js — Pantalla principal: accesos a calculadora y ruleta, totales del mes, últimas cuentas.
+ * HistorialItem (abajo): fila expandible de una cuenta guardada con detalle.
+ * HomeScreen: estado historial/simbolo/expandido; useFocusEffect recarga datos; stats y lista recientes.
+ */
+/** Una fila del historial reciente con chevron y panel expandido de detalle. */
+function HistorialItem({ item, isExpanded, onToggle, fmt, colors = Colors }) {
   return (
     <View>
       <TouchableOpacity
         style={[
           styles.historialCard,
+          { backgroundColor: colors.white },
           isExpanded && styles.historialCardExpanded,
         ]}
         onPress={onToggle}
         activeOpacity={0.7}
       >
-        <View style={styles.historialIconWrap}>
+        <View style={[styles.historialIconWrap, { backgroundColor: colors.primaryLight }]}>
           <Image source={commerce} style={{ width: 22, height: 22 }} />
         </View>
         <View style={styles.historialInfo}>
-          <Text style={styles.historialNombre}>{item.nombre}</Text>
-          <Text style={styles.historialFecha}>
+          <Text style={[styles.historialNombre, { color: colors.darkText }]}>{item.nombre}</Text>
+          <Text style={[styles.historialFecha, { color: colors.gray500 }]}>
             {item.personas} persona{item.personas !== 1 ? "s" : ""} ·{" "}
             {new Date(item.fecha).toLocaleDateString("es-ES")}
           </Text>
         </View>
         <View style={styles.historialAmounts}>
-          <Text style={styles.historialTotal}>{fmt(item.total)}</Text>
-          <Text style={styles.historialPropina}>
+          <Text style={[styles.historialTotal, { color: colors.darkText }]}>{fmt(item.total)}</Text>
+          <Text style={[styles.historialPropina, { color: colors.success }]}>
             Propina: {fmt(item.propina)}
           </Text>
         </View>
-        <Text style={[styles.chevron, isExpanded && styles.chevronRotated]}>
+        <Text style={[styles.chevron, isExpanded && styles.chevronRotated, { color: colors.gray500 }]}>
           ›
         </Text>
       </TouchableOpacity>
 
       {isExpanded && (
-        <View style={styles.cardExpandedContent}>
-          <View style={styles.divider} />
+        <View style={[styles.cardExpandedContent, { backgroundColor: colors.white }]}>
+          <View style={[styles.divider, { backgroundColor: colors.gray200 }]} />
           <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Monto Original:</Text>
-            <Text style={styles.detailValue}>
+            <Text style={[styles.detailLabel, { color: colors.gray500 }]}>Monto Original:</Text>
+            <Text style={[styles.detailValue, { color: colors.darkText }]}>
               {fmt(item.total - item.propina)}
             </Text>
           </View>
           <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Porcentaje Propina:</Text>
-            <Text style={styles.detailValue}>{item.pct}%</Text>
+            <Text style={[styles.detailLabel, { color: colors.gray500 }]}>Porcentaje Propina:</Text>
+            <Text style={[styles.detailValue, { color: colors.darkText }]}>{item.pct}%</Text>
           </View>
           <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Propina:</Text>
-            <Text style={[styles.detailValue, styles.detailValueHighlight]}>
+            <Text style={[styles.detailLabel, { color: colors.gray500 }]}>Propina:</Text>
+            <Text style={[styles.detailValue, styles.detailValueHighlight, { color: colors.primary }]}>
               {fmt(item.propina)}
             </Text>
           </View>
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.gray200 }]} />
           <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>
+            <Text style={[styles.detailLabel, { color: colors.gray500 }]}>
               Total ({item.personas}{" "}
               {item.personas === 1 ? "persona" : "personas"}):
             </Text>
-            <Text style={styles.detailTotal}>{fmt(item.total)}</Text>
+            <Text style={[styles.detailTotal, { color: colors.darkText }]}>{fmt(item.total)}</Text>
           </View>
           <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Por persona:</Text>
-            <Text style={[styles.detailValue, styles.detailValueHighlight]}>
+            <Text style={[styles.detailLabel, { color: colors.gray500 }]}>Por persona:</Text>
+            <Text style={[styles.detailValue, styles.detailValueHighlight, { color: colors.primary }]}>
               {fmt(item.total / item.personas)}
             </Text>
           </View>
           <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Fecha:</Text>
-            <Text style={styles.detailValue}>
+            <Text style={[styles.detailLabel, { color: colors.gray500 }]}>Fecha:</Text>
+            <Text style={[styles.detailValue, { color: colors.darkText }]}>
               {new Date(item.fecha).toLocaleDateString("es-ES", {
                 weekday: "short",
                 year: "numeric",
@@ -101,10 +112,14 @@ function HistorialItem({ item, isExpanded, onToggle, fmt }) {
   );
 }
 
+/** Pantalla principal con navegación a Calculator/Ruleta y vista de últimas cuentas. */
 export default function HomeScreen({ navigation }) {
   const [historial, setHistorial] = useState([]);
   const [cuentaExpandida, setCuentaExpandida] = useState(null);
   const [simboloMoneda, setSimboloMoneda] = useState("$");
+  const { temaOscuro, idioma, usuario } = useAppContext();
+  const colors = getColors(temaOscuro);
+  const t = useMemo(() => getAllTranslations(idioma), [idioma]);
 
   const totalMes = useMemo(
     () => historial.reduce((s, i) => s + (i.total || 0), 0),
@@ -120,11 +135,12 @@ export default function HomeScreen({ navigation }) {
 
   useFocusEffect(
     useCallback(() => {
-      obtenerHistorial().then(setHistorial);
+      if (!usuario?.id) return;
+      obtenerHistorial(usuario.id).then(setHistorial);
       obtenerMoneda().then((cod) => {
         setSimboloMoneda(obtenerSimboloMoneda(cod));
       });
-    }, [])
+    }, [usuario?.id])
   );
 
   const fmt = useCallback(
@@ -136,14 +152,18 @@ export default function HomeScreen({ navigation }) {
     navigation.navigate("Calculator");
   }, [navigation]);
 
+  const handleNavigateRuleta = useCallback(() => {
+    navigation.navigate("Ruleta");
+  }, [navigation]);
+
   const handleToggleExpand = useCallback((id) => {
     setCuentaExpandida((prev) => (prev === id ? null : id));
   }, []);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>PropinaPlus</Text>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bgMain }]}>
+      <View style={[styles.header, { backgroundColor: colors.white, borderBottomColor: colors.gray200 }]}>
+        <Text style={[styles.headerTitle, { color: colors.darkText }]}>PropinaPlus</Text>
       </View>
 
       <ScrollView
@@ -152,9 +172,14 @@ export default function HomeScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.greetSection}>
-          <Text style={styles.greetTitle}>¡Hola, Usuario! 👋</Text>
-          <Text style={styles.greetSub}>
-            Calcula tus propinas de forma rápida y equitativa.
+          <Text style={[styles.greetTitle, { color: colors.darkText }]}>
+            {(t["hello_named"] || "¡Hola, {{name}}!").replace(
+              "{{name}}",
+              usuario?.username || ""
+            )}
+          </Text>
+          <Text style={[styles.greetSub, { color: colors.gray500 }]}>
+            {t["hello_subtitle"]}
           </Text>
         </View>
 
@@ -163,36 +188,45 @@ export default function HomeScreen({ navigation }) {
           onPress={handleNavigateCalculator}
           activeOpacity={0.88}
         >
-          <Text style={styles.btnNuevaCuentaIcon}>⊕</Text>
+          <Text style={styles.btnNuevaCuentaIcon}>+</Text>
           <Text style={styles.btnNuevaCuentaText}>Nueva Cuenta</Text>
         </TouchableOpacity>
 
+        <TouchableOpacity
+          style={[styles.btnNuevaCuenta, styles.btnRuleta]}
+          onPress={handleNavigateRuleta}
+          activeOpacity={0.88}
+        >
+          <Image source={roulette} style={{ width: 22, height: 22 }} />
+          <Text style={styles.btnNuevaCuentaText}>Ruleta Rusa</Text>
+        </TouchableOpacity>
+
         <View style={styles.statsRow}>
-          <View style={styles.statCard}>
+          <View style={[styles.statCard, { backgroundColor: colors.white }]}>
             <Image
               source={commerce}
               style={{ width: 24, height: 24, marginBottom: 6 }}
             />
-            <Text style={styles.statLabel}>Total Mes</Text>
-            <Text style={styles.statValue}>{fmt(totalMes)}</Text>
+            <Text style={[styles.statLabel, { color: colors.gray500 }]}>Total Mes</Text>
+            <Text style={[styles.statValue, { color: colors.darkText }]}>{fmt(totalMes)}</Text>
           </View>
-          <View style={styles.statCard}>
+          <View style={[styles.statCard, { backgroundColor: colors.white }]}>
             <Image
               source={charity}
               style={{ width: 24, height: 24, marginBottom: 6 }}
             />
-            <Text style={styles.statLabel}>Propinas</Text>
-            <Text style={styles.statValue}>{fmt(totalPropinas)}</Text>
+            <Text style={[styles.statLabel, { color: colors.gray500 }]}>Propinas</Text>
+            <Text style={[styles.statValue, { color: colors.darkText }]}>{fmt(totalPropinas)}</Text>
           </View>
         </View>
 
-        <Text style={styles.sectionTitle}>Historial Reciente</Text>
+        <Text style={[styles.sectionTitle, { color: colors.darkText }]}>Historial Reciente</Text>
 
         {recientes.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>🧾</Text>
-            <Text style={styles.emptyTitle}>Sin cuentas aún</Text>
-            <Text style={styles.emptySub}>
+          <View style={[styles.emptyState, { backgroundColor: colors.white }]}>
+            <Image source={file} style={{ width: 40, height: 40 }} />
+            <Text style={[styles.emptyTitle, { color: colors.darkText }]}>Sin cuentas aún</Text>
+            <Text style={[styles.emptySub, { color: colors.gray500 }]}>
               Toca "Nueva Cuenta" para empezar a calcular
             </Text>
           </View>
@@ -204,6 +238,7 @@ export default function HomeScreen({ navigation }) {
               isExpanded={cuentaExpandida === item.id}
               onToggle={() => handleToggleExpand(item.id)}
               fmt={fmt}
+              colors={colors}
             />
           ))
         )}
@@ -212,6 +247,7 @@ export default function HomeScreen({ navigation }) {
   );
 }
 
+// Estilos base de Home (mezclan Colors fijo en StyleSheet + overrides dinámicos en JSX con `colors`).
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -441,5 +477,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.darkText,
     fontWeight: "800",
+  },
+  btnRuleta: {
+    backgroundColor: "#FF6B6B",
+    marginBottom: 24,
+    shadowColor: "#FF6B6B",
   },
 });

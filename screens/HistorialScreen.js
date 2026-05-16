@@ -7,17 +7,28 @@ import {
   SafeAreaView,
   ScrollView,
   Image,
+  Alert,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 
-import { obtenerHistorial } from "../historialStorage";
-import { obtenerMoneda, obtenerSimboloMoneda } from "../settingsStorage";
-import { Colors } from "../constants";
+import { obtenerHistorial, eliminarCuenta } from "../storage/historialStorage";
+import { obtenerMoneda, obtenerSimboloMoneda } from "../storage/settingsStorage";
+import { getColors } from "../config/constants";
+import { getAllTranslations } from "../config/languages";
+import { useAppContext } from "../context/AppContext";
+import { confirmAction } from "../utils/confirmAction";
 
 import commerce from "../assets/commerce.png";
+import file from "../assets/file.png";
 
+// Pestañas del filtro temporal de la lista.
 const TABS = ["Recientes", "Este Mes"];
 
+/*
+ * HISTORIAL_SCREEN.js — Lista completa de cuentas guardadas con filtros Recientes / Este mes y acordeón por día.
+ * agruparPorDia: etiqueta HOY/AYER/fecha larga y agrupa items. fmtHora: hora corta en locale es.
+ */
+/** Agrupa items del historial por etiqueta de día (HOY, AYER o fecha). */
 function agruparPorDia(historial) {
   const hoy = new Date();
   const ayer = new Date();
@@ -46,6 +57,7 @@ function agruparPorDia(historial) {
   return grupos;
 }
 
+/** Formatea solo hora:minutos de un ISO en locale español. */
 function fmtHora(iso) {
   return new Date(iso).toLocaleTimeString("es-ES", {
     hour: "2-digit",
@@ -53,19 +65,30 @@ function fmtHora(iso) {
   });
 }
 
+/** Tab "Historial": lista filtrada por pestañas y tarjetas expandibles por día. */
 export default function HistorialScreen() {
+  const { temaOscuro, usuario, idioma } = useAppContext();
+  const colors = getColors(temaOscuro);
+  const tr = useMemo(() => getAllTranslations(idioma), [idioma]);
+  const s = getStyles(colors);
+  
   const [tabActiva, setTabActiva] = useState("Recientes");
   const [historial, setHistorial] = useState([]);
   const [cuentaExpandida, setCuentaExpandida] = useState(null);
   const [simboloMoneda, setSimboloMoneda] = useState("$");
 
+  const cargarHistorial = useCallback(() => {
+    if (!usuario?.id) return;
+    obtenerHistorial(usuario.id).then(setHistorial);
+  }, [usuario?.id]);
+
   useFocusEffect(
     useCallback(() => {
-      obtenerHistorial().then(setHistorial);
+      cargarHistorial();
       obtenerMoneda().then((cod) => {
         setSimboloMoneda(obtenerSimboloMoneda(cod));
       });
-    }, [])
+    }, [cargarHistorial])
   );
 
   const fmt = useCallback(
@@ -73,17 +96,13 @@ export default function HistorialScreen() {
     [simboloMoneda]
   );
 
-  const ahora = useMemo(() => new Date(), []);
-  const treintaDiasAtras = useMemo(
-    () => new Date(ahora.getTime() - 30 * 24 * 60 * 60 * 1000),
-    [ahora]
-  );
-  const inicioDelMes = useMemo(
-    () => new Date(ahora.getFullYear(), ahora.getMonth(), 1),
-    [ahora]
-  );
-
   const historialFiltrado = useMemo(() => {
+    const ahora = new Date();
+    const treintaDiasAtras = new Date(
+      ahora.getTime() - 30 * 24 * 60 * 60 * 1000
+    );
+    const inicioDelMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+
     if (tabActiva === "Este Mes") {
       return historial.filter((item) => {
         const fecha = new Date(item.fecha);
@@ -94,7 +113,7 @@ export default function HistorialScreen() {
       const fecha = new Date(item.fecha);
       return fecha >= treintaDiasAtras;
     });
-  }, [tabActiva, historial, inicioDelMes, treintaDiasAtras]);
+  }, [tabActiva, historial]);
 
   const grupos = useMemo(
     () => agruparPorDia(historialFiltrado),
@@ -104,6 +123,29 @@ export default function HistorialScreen() {
   const toggleExpandir = useCallback((id) => {
     setCuentaExpandida((prev) => (prev === id ? null : id));
   }, []);
+
+  const solicitarEliminar = useCallback(
+    (item) => {
+      if (!usuario?.id) return;
+      confirmAction({
+        title: tr["history_delete"],
+        message: tr["history_delete_confirm"],
+        cancelText: tr["generic_cancel"],
+        confirmText: tr["history_delete"],
+        destructive: true,
+        onConfirm: async () => {
+          try {
+            await eliminarCuenta(usuario.id, item.id);
+            setCuentaExpandida((prev) => (prev === item.id ? null : prev));
+            cargarHistorial();
+          } catch {
+            Alert.alert(tr["error"], tr["history_delete_error"]);
+          }
+        },
+      });
+    },
+    [usuario?.id, tr, cargarHistorial]
+  );
 
   return (
     <SafeAreaView style={s.safe}>
@@ -140,7 +182,7 @@ export default function HistorialScreen() {
       >
         {historial.length === 0 ? (
           <View style={s.emptyState}>
-            <Text style={s.emptyIcon}>🧾</Text>
+            <Image source={file} style={{ width: 40, height: 40 }} />
             <Text style={s.emptyTitle}>Sin cuentas aún</Text>
             <Text style={s.emptySub}>Tus cálculos aparecerán aquí</Text>
           </View>
@@ -255,6 +297,16 @@ export default function HistorialScreen() {
                           )}
                         </Text>
                       </View>
+
+                      <TouchableOpacity
+                        style={s.btnEliminar}
+                        onPress={() => solicitarEliminar(item)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={s.btnEliminarText}>
+                          {tr["history_delete"]}
+                        </Text>
+                      </TouchableOpacity>
                     </View>
                   )}
                 </View>
@@ -269,32 +321,34 @@ export default function HistorialScreen() {
   );
 }
 
-const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.bgMain },
+/** Estilos de la pantalla Historial según `colors`. */
+function getStyles(colors) {
+  return StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.bgMain },
 
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.gray200,
+    borderBottomColor: colors.gray200,
   },
 
   headerTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: Colors.darkText,
+    color: colors.darkText,
   },
 
   tabsRow: {
     flexDirection: "row",
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.gray200,
+    borderBottomColor: colors.gray200,
   },
 
   tabBtn: {
@@ -306,11 +360,11 @@ const s = StyleSheet.create({
   tabText: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.gray500,
+    color: colors.gray500,
   },
 
   tabTextActivo: {
-    color: Colors.primary,
+    color: colors.primary,
   },
 
   tabUnderline: {
@@ -319,7 +373,7 @@ const s = StyleSheet.create({
     left: 0,
     right: 0,
     height: 2,
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     borderRadius: 99,
   },
 
@@ -333,14 +387,14 @@ const s = StyleSheet.create({
   grupoLabel: {
     fontSize: 11,
     fontWeight: "800",
-    color: Colors.gray500,
+    color: colors.gray500,
     letterSpacing: 1.2,
     marginTop: 16,
     marginBottom: 8,
   },
 
   card: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: 16,
     padding: 14,
     flexDirection: "row",
@@ -357,7 +411,7 @@ const s = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 12,
-    backgroundColor: Colors.primaryLight,
+    backgroundColor: colors.primaryLight,
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
@@ -368,20 +422,20 @@ const s = StyleSheet.create({
   cardNombre: {
     fontSize: 15,
     fontWeight: "700",
-    color: Colors.darkText,
+    color: colors.darkText,
     marginBottom: 2,
   },
 
   cardMeta: {
     fontSize: 12,
-    color: Colors.gray500,
+    color: colors.gray500,
     marginBottom: 2,
   },
 
   cardPropina: {
     fontSize: 12,
     fontWeight: "600",
-    color: Colors.primary,
+    color: colors.primary,
   },
 
   cardRight: {
@@ -392,12 +446,12 @@ const s = StyleSheet.create({
   cardTotal: {
     fontSize: 16,
     fontWeight: "800",
-    color: Colors.darkText,
+    color: colors.darkText,
   },
 
   cardChevron: {
     fontSize: 18,
-    color: Colors.gray200,
+    color: colors.gray200,
   },
 
   cardChevronRotated: {
@@ -410,7 +464,7 @@ const s = StyleSheet.create({
   },
 
   cardExpandedContent: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderBottomLeftRadius: 16,
     borderBottomRightRadius: 16,
     paddingHorizontal: 16,
@@ -425,7 +479,7 @@ const s = StyleSheet.create({
 
   divider: {
     height: 1,
-    backgroundColor: Colors.gray100,
+    backgroundColor: colors.gray100,
     marginVertical: 12,
   },
 
@@ -438,31 +492,48 @@ const s = StyleSheet.create({
 
   detailLabel: {
     fontSize: 13,
-    color: Colors.gray500,
+    color: colors.gray500,
     fontWeight: "500",
   },
 
   detailValue: {
     fontSize: 13,
-    color: Colors.darkText,
+    color: colors.darkText,
     fontWeight: "600",
   },
 
   detailValueHighlight: {
-    color: Colors.primary,
+    color: colors.primary,
     fontWeight: "700",
   },
 
   detailTotal: {
     fontSize: 14,
-    color: Colors.darkText,
+    color: colors.darkText,
     fontWeight: "800",
+  },
+
+  btnEliminar: {
+    marginTop: 20,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    backgroundColor: colors.white,
+  },
+
+  btnEliminarText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: colors.danger,
   },
 
   emptyState: {
     alignItems: "center",
     paddingVertical: 60,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: 18,
     marginTop: 20,
   },
@@ -475,19 +546,20 @@ const s = StyleSheet.create({
   emptyTitle: {
     fontSize: 16,
     fontWeight: "800",
-    color: Colors.darkText,
+    color: colors.darkText,
     marginBottom: 6,
   },
 
   emptySub: {
     fontSize: 13,
-    color: Colors.gray500,
+    color: colors.gray500,
   },
 
   footer: {
     textAlign: "center",
     fontSize: 12,
-    color: Colors.gray500,
+    color: colors.gray500,
     marginTop: 24,
   },
-});
+  });
+}

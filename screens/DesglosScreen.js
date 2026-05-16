@@ -5,7 +5,7 @@ import {
   TouchableOpacity,
   SafeAreaView,
   ScrollView,
-  Share,
+  BackHandler,
 } from "react-native";
 import { useCallback, useState, useMemo } from "react";
 import { useFocusEffect } from "@react-navigation/native";
@@ -15,12 +15,25 @@ import {
   aplicarRedondeo,
   obtenerMoneda,
   obtenerSimboloMoneda,
-} from "../settingsStorage";
-import { Colors } from "../constants";
+} from "../storage/settingsStorage";
+import { getColors } from "../config/constants";
+import { useAppContext } from "../context/AppContext";
+import ShareModal from "../components/ShareModal";
 
+/*
+ * DESGLOS_SCREEN.js — Muestra total por participante (invitados excluidos del reparto), totales y compartir.
+ * route.params: participantes, subtotal, propina, totalAPagar, propinaPorPersona, pctDelConsumo.
+ * useMemo: activos, reparto consumo excluidos, montos redondeados opcionalmente, texto para ShareModal.
+ */
 export default function DesglosScreen({ route, navigation }) {
+  const { temaOscuro } = useAppContext();
+  const colors = getColors(temaOscuro);
+  const styles = getStyles(colors);
+  
   const [redondeoActivo, setRedondeoActivo] = useState(true);
   const [simboloMoneda, setSimboloMoneda] = useState("$");
+  const [modalShareVisible, setModalShareVisible] = useState(false);
+  const [mensajeCompartir, setMensajeCompartir] = useState("");
 
   useFocusEffect(
     useCallback(() => {
@@ -29,6 +42,21 @@ export default function DesglosScreen({ route, navigation }) {
         setSimboloMoneda(obtenerSimboloMoneda(cod));
       });
     }, [])
+  );
+
+  /** Atrás: vuelve a la raíz del stack Inicio (Home), no solo a Calculator. */
+  const irPaginaInicial = useCallback(() => {
+    navigation.popToTop();
+  }, [navigation]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+        irPaginaInicial();
+        return true;
+      });
+      return () => sub.remove();
+    }, [irPaginaInicial])
   );
 
   const fmt = useCallback(
@@ -86,7 +114,7 @@ export default function DesglosScreen({ route, navigation }) {
   const totalParticipante = useCallback(
     (p) => {
       if (p.excluido) return 0;
-      const consumo = parseFloat(p.consumo) ||  0;
+      const consumo = parseFloat(p.consumo) || 0;
       return aplicarRedondeo(
         consumo +
           consumoExcluidosPorActivo +
@@ -102,9 +130,9 @@ export default function DesglosScreen({ route, navigation }) {
     [propinaPorPersonaRedondeada]
   );
 
-  const handleCompartir = useCallback(async () => {
+  const handleCompartir = useCallback(() => {
     const lines = participantes.map((p) => {
-      if (p.excluido) return `${p.nombre} (Invitado): $0.00`;
+      if (p.excluido) return `${p.nombre} (Invitado): ${fmt(0)}`;
       return `${p.nombre}: ${fmt(totalParticipante(p))}`;
     });
 
@@ -115,16 +143,14 @@ export default function DesglosScreen({ route, navigation }) {
         propinaRedondeada
       )}\nTOTAL: ${fmt(totalAPagarRedondeado)}`;
 
-    await Share.share({ message: texto });
+    setMensajeCompartir(texto);
+    setModalShareVisible(true);
   }, [participantes, fmt, totalParticipante, subtotalRedondeado, pctDelConsumo, propinaRedondeada, totalAPagarRedondeado]);
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backBtn}
-        >
+        <TouchableOpacity onPress={irPaginaInicial} style={styles.backBtn}>
           <Text style={styles.backIcon}>←</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Desglose</Text>
@@ -238,29 +264,38 @@ export default function DesglosScreen({ route, navigation }) {
           <Text style={styles.btnCompartirText}>Compartir Resultado</Text>
         </TouchableOpacity>
       </View>
+
+      <ShareModal
+        visible={modalShareVisible}
+        onClose={() => setModalShareVisible(false)}
+        mensaje={mensajeCompartir}
+        titulo="Desglose de Cuenta"
+      />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.bgMain },
+/** Estilos del desglose en función de la paleta `colors` (tema). */
+function getStyles(colors) {
+  return StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.bgMain },
 
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.gray200,
+    borderBottomColor: colors.gray200,
   },
   backBtn: { width: 36 },
-  backIcon: { fontSize: 22, color: Colors.darkText },
+  backIcon: { fontSize: 22, color: colors.darkText },
   headerTitle: {
     fontSize: 18,
     fontWeight: "800",
-    color: Colors.darkText,
+    color: colors.darkText,
   },
 
   scroll: { flex: 1 },
@@ -275,11 +310,11 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: 11,
     fontWeight: "800",
-    color: Colors.gray500,
+    color: colors.gray500,
     letterSpacing: 1.5,
   },
   personasBadge: {
-    backgroundColor: Colors.primaryLight,
+    backgroundColor: colors.primaryLight,
     borderRadius: 99,
     paddingHorizontal: 12,
     paddingVertical: 5,
@@ -287,11 +322,11 @@ const styles = StyleSheet.create({
   personasBadgeText: {
     fontSize: 12,
     fontWeight: "700",
-    color: Colors.primary,
+    color: colors.primary,
   },
 
   personaCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
@@ -302,9 +337,9 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   personaCardInvitado: {
-    backgroundColor: Colors.gray100,
+    backgroundColor: colors.gray100,
     borderWidth: 1.5,
-    borderColor: Colors.gray200,
+    borderColor: colors.gray200,
     borderStyle: "dashed",
     shadowOpacity: 0,
     elevation: 0,
@@ -324,10 +359,10 @@ const styles = StyleSheet.create({
   personaNombre: {
     fontSize: 17,
     fontWeight: "800",
-    color: Colors.darkText,
+    color: colors.darkText,
   },
   personaNombreInvitado: {
-    color: Colors.gray500,
+    color: colors.gray500,
   },
   invitadoBadge: {
     backgroundColor: "#EFEFEF",
@@ -338,16 +373,16 @@ const styles = StyleSheet.create({
   invitadoBadgeText: {
     fontSize: 10,
     fontWeight: "800",
-    color: Colors.gray500,
+    color: colors.gray500,
     letterSpacing: 0.5,
   },
   personaTotal: {
     fontSize: 20,
     fontWeight: "900",
-    color: Colors.primary,
+    color: colors.primary,
   },
   personaTotalInvitado: {
-    color: Colors.gray500,
+    color: colors.gray500,
   },
   personaDetalle: {
     flexDirection: "row",
@@ -356,26 +391,26 @@ const styles = StyleSheet.create({
   },
   personaConsumo: {
     fontSize: 13,
-    color: Colors.gray500,
+    color: colors.gray500,
   },
   personaPropina: {
     fontSize: 13,
     fontWeight: "600",
-    color: Colors.primary,
+    color: colors.primary,
   },
   invitadoSub: {
     fontSize: 13,
-    color: Colors.gray500,
+    color: colors.gray500,
     fontStyle: "italic",
   },
 
   totalCard: {
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     borderRadius: 20,
     padding: 24,
     marginTop: 8,
     overflow: "hidden",
-    shadowColor: Colors.primary,
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.4,
     shadowRadius: 16,
@@ -405,7 +440,7 @@ const styles = StyleSheet.create({
   totalCardAmount: {
     fontSize: 48,
     fontWeight: "900",
-    color: Colors.white,
+    color: colors.white,
     lineHeight: 54,
   },
   totalCardSub: {
@@ -436,17 +471,17 @@ const styles = StyleSheet.create({
     right: 0,
     padding: 16,
     paddingBottom: 28,
-    backgroundColor: "rgba(246,244,240,0.97)",
+    backgroundColor: colors.bgMain,
   },
   btnCompartir: {
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     borderRadius: 16,
     paddingVertical: 18,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
-    shadowColor: Colors.primary,
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
     shadowRadius: 12,
@@ -454,13 +489,14 @@ const styles = StyleSheet.create({
   },
   btnCompartirIcon: {
     fontSize: 18,
-    color: Colors.white,
+    color: colors.white,
     fontWeight: "800",
   },
   btnCompartirText: {
     fontSize: 16,
     fontWeight: "800",
-    color: Colors.white,
+    color: colors.white,
     letterSpacing: 0.3,
   },
-});
+  });
+}

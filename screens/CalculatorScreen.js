@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import {
   StyleSheet,
   Text,
@@ -10,24 +10,50 @@ import {
   Switch,
   Modal,
   KeyboardAvoidingView,
+  Keyboard,
+  Pressable,
   Platform,
   Image,
 } from "react-native";
+
+import {
+  KeyboardDoneAccessory,
+  KEYBOARD_DONE_ACCESSORY_ID,
+} from "../components/KeyboardDoneAccessory";
 import { useFocusEffect } from "@react-navigation/native";
 
 import web from "../assets/web.png";
 import profile from "../assets/profile.png";
 import people from "../assets/people.png";
 import calculator from "../assets/calculator.png";
-import { guardarCuenta } from "../historialStorage";
+import { guardarCuenta } from "../storage/historialStorage";
 import {
   obtenerRedondeo,
   obtenerMoneda,
   obtenerSimboloMoneda,
-} from "../settingsStorage";
-import { Colors, TIP_PCT } from "../constants";
+} from "../storage/settingsStorage";
+import { getColors, TIP_PCT } from "../config/constants";
+import { useAppContext } from "../context/AppContext";
+import { confirmAction } from "../utils/confirmAction";
 
+/*
+ * =============================================================================
+ * CALCULATOR_SCREEN.js — GUÍA DEL ARCHIVO (orden de aparición en el código)
+ * =============================================================================
+ * Imports (1–29): React, RN, navegación, assets, guardar historial, ajustes, constantes, contexto.
+ * Estados (36–45): lista participantes, modal nuevo, campos modal, propina fija opcional, nombre cuenta, redondeo, símbolo $.
+ * useFocusEffect (47–77): sincroniza params al volver de Tip; limpia params; recarga redondeo y moneda.
+ * useMemo (79–126): activos/excluidos, sumas consumo, propina total, total a pagar, propina/persona, %, formateo moneda.
+ * Callbacks (133–200): excluir, consumo, añadir persona, navegar a Tip, guardar cuenta + ir a Desglose.
+ * return JSX (201–448): layout scroll + barra inferior + modal añadir participante.
+ * getStyles (451–788): StyleSheet dinámico según `colors` (tema).
+ * =============================================================================
+ */
 export default function Calculator({ navigation, route }) {
+  const { temaOscuro, usuario } = useAppContext();
+  const colors = getColors(temaOscuro);
+  const styles = getStyles(colors);
+  
   const [participantes, setParticipantes] = useState([
     { id: 1, nombre: "Tú", consumo: "", excluido: false },
   ]);
@@ -37,8 +63,9 @@ export default function Calculator({ navigation, route }) {
   const [propinaMonto, setPropinaMonto] = useState(null);
   const [nombreCuenta, setNombreCuenta] = useState("");
   const [redondeoActivo, setRedondeoActivo] = useState(true);
-  const [moneda, setMoneda] = useState("USD");
   const [simboloMoneda, setSimboloMoneda] = useState("$");
+
+  const modalConsumoRef = useRef(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -66,10 +93,9 @@ export default function Calculator({ navigation, route }) {
       }
 
       obtenerRedondeo().then(setRedondeoActivo);
-      obtenerMoneda().then((cod) => {
-        setMoneda(cod);
-        setSimboloMoneda(obtenerSimboloMoneda(cod));
-      });
+      obtenerMoneda().then((cod) =>
+        setSimboloMoneda(obtenerSimboloMoneda(cod))
+      );
     }, [route?.params, navigation])
   );
 
@@ -127,6 +153,20 @@ export default function Calculator({ navigation, route }) {
     [simboloMoneda]
   );
 
+  const tieneDatosIngresados = useMemo(
+    () =>
+      nombreCuenta.trim().length > 0 ||
+      propinaMonto !== null ||
+      participantes.some(
+        (p, index) =>
+          index > 0 ||
+          p.nombre !== "Tú" ||
+          String(p.consumo || "").trim().length > 0 ||
+          p.excluido
+      ),
+    [nombreCuenta, propinaMonto, participantes]
+  );
+
   const toggleExcluido = useCallback((id) => {
     setParticipantes((prev) =>
       prev.map((p) => (p.id === id ? { ...p, excluido: !p.excluido } : p))
@@ -141,6 +181,7 @@ export default function Calculator({ navigation, route }) {
 
   const agregarParticipante = useCallback(() => {
     if (!newNombre.trim()) return;
+    Keyboard.dismiss();
     setParticipantes((prev) => [
       ...prev,
       {
@@ -156,6 +197,7 @@ export default function Calculator({ navigation, route }) {
   }, [newNombre, newConsumo]);
 
   const handleNavigateToTip = useCallback(() => {
+    Keyboard.dismiss();
     navigation.navigate("Tip", {
       subtotal,
       totalConsumo,
@@ -164,7 +206,8 @@ export default function Calculator({ navigation, route }) {
     });
   }, [navigation, subtotal, totalConsumo, participantes, nombreCuenta]);
 
-  const handleCalcularDesglose = useCallback(async () => {
+  const ejecutarCalculoDesglose = useCallback(async () => {
+    Keyboard.dismiss();
     const cuenta = {
       id: Date.now(),
       nombre: nombreCuenta.trim() || "Cuenta Sin Nombre",
@@ -174,7 +217,7 @@ export default function Calculator({ navigation, route }) {
       propina,
       pct: propinaMonto !== null ? parseFloat(pctDelConsumo) : TIP_PCT,
     };
-    await guardarCuenta(cuenta);
+    await guardarCuenta(cuenta, usuario.id);
     navigation.navigate("Desglos", {
       participantes,
       subtotal: totalConsumo,
@@ -182,7 +225,6 @@ export default function Calculator({ navigation, route }) {
       totalAPagar,
       propinaPorPersona,
       pctDelConsumo,
-      activos,
     });
   }, [
     nombreCuenta,
@@ -195,16 +237,45 @@ export default function Calculator({ navigation, route }) {
     participantes,
     totalConsumo,
     propinaPorPersona,
+    usuario?.id,
   ]);
+
+  const handleCalcularDesglose = useCallback(() => {
+    Keyboard.dismiss();
+    confirmAction({
+      title: "Confirmar cálculo",
+      message: "¿Deseas calcular la propina con los valores ingresados?",
+      confirmText: "Calcular",
+      onConfirm: ejecutarCalculoDesglose,
+    });
+  }, [ejecutarCalculoDesglose]);
+
+  const handleVolver = useCallback(() => {
+    Keyboard.dismiss();
+
+    if (!tieneDatosIngresados) {
+      navigation.goBack();
+      return;
+    }
+
+    confirmAction({
+      title: "Salir de la calculadora",
+      message: "Si sales ahora, se perderán los valores ingresados que aún no calculaste.",
+      confirmText: "Salir",
+      destructive: true,
+      onConfirm: () => navigation.goBack(),
+    });
+  }, [navigation, tieneDatosIngresados]);
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.bgMain }]}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        <View style={styles.header}>
+        <KeyboardDoneAccessory />
+        <View style={[styles.header, { backgroundColor: colors.white, borderBottomColor: colors.gray200 }]}>
           <TouchableOpacity
-            onPress={() => navigation.goBack()}
+            onPress={handleVolver}
             style={styles.backBtn}
           >
             <Text style={styles.backIcon}>←</Text>
@@ -217,6 +288,8 @@ export default function Calculator({ navigation, route }) {
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
         >
           <View style={styles.sectionNombre}>
             <Text style={styles.sectionLabel}>NOMBRE DE LA CUENTA</Text>
@@ -228,7 +301,10 @@ export default function Calculator({ navigation, route }) {
                 value={nombreCuenta}
                 onChangeText={setNombreCuenta}
                 placeholder="Ej: Almuerzo con amigos"
-                placeholderTextColor={Colors.gray500}
+                placeholderTextColor={colors.gray500}
+                returnKeyType="done"
+                blurOnSubmit
+                onSubmitEditing={() => Keyboard.dismiss()}
               />
             </View>
           </View>
@@ -273,8 +349,14 @@ export default function Calculator({ navigation, route }) {
                       value={p.consumo}
                       onChangeText={(v) => actualizarConsumo(p.id, v)}
                       placeholder="0.00"
-                      placeholderTextColor={Colors.gray500}
+                      placeholderTextColor={colors.gray500}
                       keyboardType="numeric"
+                      inputAccessoryViewID={
+                        Platform.OS === "ios" ? KEYBOARD_DONE_ACCESSORY_ID : undefined
+                      }
+                      returnKeyType="done"
+                      blurOnSubmit
+                      onSubmitEditing={() => Keyboard.dismiss()}
                     />
                   </View>
                 </View>
@@ -284,8 +366,8 @@ export default function Calculator({ navigation, route }) {
                   <Switch
                     value={p.excluido}
                     onValueChange={() => toggleExcluido(p.id)}
-                    trackColor={{ false: Colors.gray200, true: Colors.primary }}
-                    thumbColor={Colors.white}
+                    trackColor={{ false: colors.gray200, true: colors.primary }}
+                    thumbColor={colors.white}
                   />
                 </View>
               </View>
@@ -313,7 +395,7 @@ export default function Calculator({ navigation, route }) {
             onPress={handleNavigateToTip}
           >
             <Text style={styles.sectionLabel}>CONFIGURAR PROPINA</Text>
-            <Text style={{ color: Colors.primary, fontSize: 13, fontWeight: "700" }}>
+            <Text style={{ color: colors.primary, fontSize: 13, fontWeight: "700" }}>
               Editar ›
             </Text>
           </TouchableOpacity>
@@ -341,7 +423,7 @@ export default function Calculator({ navigation, route }) {
               <Text style={styles.infoPillIcon}>%</Text>
               <Text style={styles.infoPillText}>
                 Equivale al{" "}
-                <Text style={{ color: Colors.primary, fontWeight: "700" }}>
+                <Text style={{ color: colors.primary, fontWeight: "700" }}>
                   {pctDelConsumo}%
                 </Text>{" "}
                 del consumo de participantes activos
@@ -355,7 +437,7 @@ export default function Calculator({ navigation, route }) {
               />
               <Text style={styles.infoPillText}>
                 Dividido entre{" "}
-                <Text style={{ color: Colors.primary, fontWeight: "700" }}>
+                <Text style={{ color: colors.primary, fontWeight: "700" }}>
                   {activos.length}
                 </Text>{" "}
                 participante{activos.length !== 1 ? "s" : ""} activo
@@ -386,10 +468,23 @@ export default function Calculator({ navigation, route }) {
           visible={modalVisible}
           transparent
           animationType="slide"
-          onRequestClose={() => setModalVisible(false)}
+          onRequestClose={() => {
+            Keyboard.dismiss();
+            setModalVisible(false);
+          }}
         >
           <View style={styles.modalOverlay}>
-            <View style={styles.modalSheet}>
+            <Pressable
+              style={styles.modalBackdropTouchable}
+              onPress={Keyboard.dismiss}
+            />
+
+            <KeyboardAvoidingView
+              behavior={Platform.OS === "ios" ? "padding" : undefined}
+              keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
+              style={{ width: "100%" }}
+            >
+              <View style={styles.modalSheet}>
               <View style={styles.modalHandle} />
               <Text style={styles.modalTitle}>Añadir Participante</Text>
 
@@ -401,7 +496,10 @@ export default function Calculator({ navigation, route }) {
                   value={newNombre}
                   onChangeText={setNewNombre}
                   placeholder="Ej: María García"
-                  placeholderTextColor={Colors.gray500}
+                  placeholderTextColor={colors.gray500}
+                  returnKeyType="next"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => modalConsumoRef.current?.focus()}
                 />
               </View>
 
@@ -411,12 +509,19 @@ export default function Calculator({ navigation, route }) {
               <View style={styles.modalInputWrapper}>
                 <Text style={styles.modalInputPrefix}>$</Text>
                 <TextInput
+                  ref={modalConsumoRef}
                   style={styles.modalInput}
                   value={newConsumo}
                   onChangeText={setNewConsumo}
                   placeholder="0.00"
-                  placeholderTextColor={Colors.gray500}
+                  placeholderTextColor={colors.gray500}
                   keyboardType="numeric"
+                  inputAccessoryViewID={
+                    Platform.OS === "ios" ? KEYBOARD_DONE_ACCESSORY_ID : undefined
+                  }
+                  returnKeyType="done"
+                  blurOnSubmit
+                  onSubmitEditing={() => Keyboard.dismiss()}
                 />
               </View>
               <Text style={styles.modalHint}>
@@ -432,13 +537,17 @@ export default function Calculator({ navigation, route }) {
               </TouchableOpacity>
 
               <TouchableOpacity
-                onPress={() => setModalVisible(false)}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  setModalVisible(false);
+                }}
                 style={styles.btnCancelar}
                 activeOpacity={0.7}
               >
                 <Text style={styles.btnCancelarText}>Cancelar</Text>
               </TouchableOpacity>
             </View>
+            </KeyboardAvoidingView>
           </View>
         </Modal>
       </KeyboardAvoidingView>
@@ -446,25 +555,24 @@ export default function Calculator({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.bgMain },
+/** Hoja de estilos de la calculadora según tema (`colors`). */
+function getStyles(colors) {
+  return StyleSheet.create({
+  safe: { flex: 1 },
 
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: Colors.white,
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.gray200,
   },
   backBtn: { width: 36, alignItems: "flex-start" },
-  backIcon: { fontSize: 22, color: Colors.darkText },
+  backIcon: { fontSize: 22 },
   headerTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: Colors.darkText,
   },
 
   scroll: { flex: 1 },
@@ -484,14 +592,14 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: 11,
     fontWeight: "800",
-    color: Colors.primary,
+    color: colors.primary,
     letterSpacing: 1.2,
   },
   btnAnadir: { flexDirection: "row", alignItems: "center", gap: 4 },
   btnAnadirText: {
     fontSize: 13,
     fontWeight: "700",
-    color: Colors.primary,
+    color: colors.primary,
     textAlign: "center",
   },
 
@@ -502,12 +610,12 @@ const styles = StyleSheet.create({
   nombreInput: {
     fontSize: 15,
     fontWeight: "600",
-    color: Colors.darkText,
+    color: colors.darkText,
     padding: 0,
   },
 
   card: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderRadius: 16,
     marginBottom: 20,
     overflow: "hidden",
@@ -524,7 +632,7 @@ const styles = StyleSheet.create({
   },
   participanteRowBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: Colors.gray100,
+    borderBottomColor: colors.gray100,
   },
   participanteTop: {
     flexDirection: "row",
@@ -541,7 +649,7 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: Colors.primaryLight,
+    backgroundColor: colors.primaryLight,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -549,7 +657,7 @@ const styles = StyleSheet.create({
   participanteNombre: {
     fontSize: 15,
     fontWeight: "600",
-    color: Colors.darkText,
+    color: colors.darkText,
   },
   participanteRight: {
     flexDirection: "row",
@@ -559,12 +667,12 @@ const styles = StyleSheet.create({
   consumoPrefix: {
     fontSize: 14,
     fontWeight: "700",
-    color: Colors.primary,
+    color: colors.primary,
   },
   consumoInput: {
     fontSize: 15,
     fontWeight: "700",
-    color: Colors.primary,
+    color: colors.primary,
     minWidth: 60,
     textAlign: "right",
     padding: 0,
@@ -576,11 +684,11 @@ const styles = StyleSheet.create({
   },
   excluirLabel: {
     fontSize: 13,
-    color: Colors.gray500,
+    color: colors.gray500,
   },
 
   summaryBox: {
-    backgroundColor: Colors.primaryBg,
+    backgroundColor: colors.primaryBg,
     borderRadius: 16,
     padding: 16,
     marginBottom: 20,
@@ -596,15 +704,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: "#E8C5BC",
   },
-  summaryLabelText: { fontSize: 14, color: Colors.darkText },
-  summaryValueText: { fontSize: 14, fontWeight: "700", color: Colors.darkText },
-  summaryPropLabel: { fontSize: 14, color: Colors.primary, fontWeight: "600" },
-  summaryPropValue: { fontSize: 14, fontWeight: "700", color: Colors.primary },
-  summaryTotalLabel: { fontSize: 15, fontWeight: "800", color: Colors.darkText },
+  summaryLabelText: { fontSize: 14, color: colors.darkText },
+  summaryValueText: { fontSize: 14, fontWeight: "700", color: colors.darkText },
+  summaryPropLabel: { fontSize: 14, color: colors.primary, fontWeight: "600" },
+  summaryPropValue: { fontSize: 14, fontWeight: "700", color: colors.primary },
+  summaryTotalLabel: { fontSize: 15, fontWeight: "800", color: colors.darkText },
   summaryTotalValue: {
     fontSize: 22,
     fontWeight: "900",
-    color: Colors.primary,
+    color: colors.primary,
   },
 
   propinaCenterBlock: {
@@ -614,18 +722,18 @@ const styles = StyleSheet.create({
   propinaCenterLabel: {
     fontSize: 10,
     fontWeight: "800",
-    color: Colors.primary,
+    color: colors.primary,
     letterSpacing: 1,
     marginBottom: 8,
   },
   propinaCenterValue: {
     fontSize: 36,
     fontWeight: "900",
-    color: Colors.primary,
+    color: colors.primary,
   },
   divider: {
     height: 1,
-    backgroundColor: Colors.gray100,
+    backgroundColor: colors.gray100,
     marginHorizontal: 16,
   },
   propinaPorPersonaRow: {
@@ -638,13 +746,13 @@ const styles = StyleSheet.create({
   propinaPorPersonaLabel: {
     fontSize: 11,
     fontWeight: "800",
-    color: Colors.gray500,
+    color: colors.gray500,
     letterSpacing: 0.8,
   },
   propinaPorPersonaValue: {
     fontSize: 16,
     fontWeight: "800",
-    color: Colors.primary,
+    color: colors.primary,
   },
   infoPill: {
     flexDirection: "row",
@@ -652,19 +760,19 @@ const styles = StyleSheet.create({
     gap: 8,
     marginHorizontal: 16,
     marginBottom: 8,
-    backgroundColor: Colors.gray100,
+    backgroundColor: colors.gray100,
     borderRadius: 10,
     padding: 10,
   },
   infoPillIcon: {
     fontSize: 13,
-    color: Colors.primary,
+    color: colors.primary,
     fontWeight: "800",
     marginTop: 1,
   },
   infoPillText: {
     fontSize: 12,
-    color: Colors.gray500,
+    color: colors.gray500,
     flex: 1,
     lineHeight: 18,
   },
@@ -676,14 +784,14 @@ const styles = StyleSheet.create({
     right: 0,
     padding: 16,
     paddingBottom: 28,
-    backgroundColor: "rgba(246,244,240,0.97)",
+    backgroundColor: colors.bgMain,
   },
   btnCalcular: {
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     borderRadius: 16,
     paddingVertical: 18,
     alignItems: "center",
-    shadowColor: Colors.primary,
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
     shadowRadius: 12,
@@ -692,17 +800,22 @@ const styles = StyleSheet.create({
   btnCalcularText: {
     fontSize: 16,
     fontWeight: "800",
-    color: Colors.white,
+    color: colors.white,
     letterSpacing: 0.3,
   },
 
   modalOverlay: {
     flex: 1,
+    flexDirection: "column",
     backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "flex-end",
+  },
+
+  modalBackdropTouchable: {
+    flexGrow: 1,
+    width: "100%",
   },
   modalSheet: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     padding: 28,
@@ -712,28 +825,28 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 99,
-    backgroundColor: Colors.gray200,
+    backgroundColor: colors.gray200,
     alignSelf: "center",
     marginBottom: 24,
   },
   modalTitle: {
     fontSize: 22,
     fontWeight: "900",
-    color: Colors.darkText,
+    color: colors.darkText,
     textAlign: "center",
     marginBottom: 28,
   },
   modalLabel: {
     fontSize: 13,
     fontWeight: "600",
-    color: Colors.darkText,
+    color: colors.darkText,
     marginBottom: 8,
     textAlign: "center",
   },
   modalInputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.gray100,
+    backgroundColor: colors.gray100,
     borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 14,
@@ -742,28 +855,27 @@ const styles = StyleSheet.create({
   modalInputPrefix: {
     fontSize: 16,
     fontWeight: "700",
-    color: Colors.gray500,
+    color: colors.gray500,
   },
   modalInput: {
     flex: 1,
     fontSize: 15,
     fontWeight: "600",
-    color: Colors.darkText,
+    color: colors.darkText,
     padding: 0,
   },
   modalHint: {
     fontSize: 12,
-    color: Colors.gray500,
     marginTop: 8,
     lineHeight: 17,
   },
   btnConfirm: {
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     borderRadius: 16,
     paddingVertical: 18,
     alignItems: "center",
     marginTop: 28,
-    shadowColor: Colors.primary,
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.3,
     shadowRadius: 12,
@@ -772,7 +884,7 @@ const styles = StyleSheet.create({
   btnConfirmText: {
     fontSize: 16,
     fontWeight: "800",
-    color: Colors.white,
+    color: colors.white,
   },
   btnCancelar: {
     alignItems: "center",
@@ -782,6 +894,7 @@ const styles = StyleSheet.create({
   btnCancelarText: {
     fontSize: 15,
     fontWeight: "700",
-    color: Colors.primary,
+    color: colors.primary,
   },
-});
+  });
+}
