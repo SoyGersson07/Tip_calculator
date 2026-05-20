@@ -1,0 +1,17 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Start Expo Dev Server",
+			"type": "shell",
+			"command": "expo start --web",
+			"isBackground": true
+		},
+		{
+			"label": "Start Expo Dev Server",
+			"type": "shell",
+			"command": "npm run start",
+			"isBackground": true
+		}
+	]
+}
